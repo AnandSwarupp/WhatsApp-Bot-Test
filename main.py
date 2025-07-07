@@ -3,6 +3,7 @@ import requests
 import json
 import os
 from fastapi.responses import PlainTextResponse
+from collections import defaultdict
 
 app = FastAPI()
 
@@ -15,6 +16,8 @@ headers = {
     "Authorization": f"Bearer {ACCESS_TOKEN}",
     "Content-Type": "application/json"
 }
+
+user_intent = defaultdict(lambda: "unknown")
 
 @app.get("/webhook")
 def verify_webhook(request: Request):
@@ -52,7 +55,8 @@ async def handle_webhook(request: Request):
                 handle_button_click(sender, button_id)
 
             elif msg_type in ["image", "document"]:
-                send_message(sender, "Thanks! We'll process your document shortly.")
+                    doc_type = user_intent.get(sender, "unknown")
+                    send_message(sender, f"Thanks! We received your {doc_type}. We'll process it shortly.")
 
     except Exception as e:
         print("Webhook Error:", e)
@@ -91,8 +95,15 @@ def send_button_message(to: str):
                     {
                         "type": "reply",
                         "reply": {
-                            "id": "upload_payslip",
-                            "title": "💼 Upload Payslip"
+                            "id": "upload_invoice",
+                            "title": "💼 Upload Invoice"
+                        }
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "upload_bank-statement",
+                            "title": "💼 Upload Bank Statement"
                         }
                     },
                     {
@@ -110,10 +121,10 @@ def send_button_message(to: str):
     print(response.json())
 
 def handle_button_click(to: str, button_id: str):
-    if button_id == "upload_cheque":
-        send_message(to, "Please upload a clear photo or PDF of your cheque.")
-    elif button_id == "upload_payslip":
-        send_message(to, "Please upload your payslip document here.")
+    if button_id.startswith("upload_"):
+        doc_type = button_id.replace("upload_", "")
+        user_intent[to] = doc_type
+        send_message(to, f"Please upload your {doc_type} now.")
     elif button_id == "chat_finance":
         send_message(to, "Great! Ask me any financial question, and I’ll help you.")
     else:
