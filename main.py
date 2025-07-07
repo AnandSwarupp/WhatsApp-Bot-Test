@@ -102,13 +102,6 @@ def send_button_message(to: str):
                     {
                         "type": "reply",
                         "reply": {
-                            "id": "upload_bank-statement",
-                            "title": "💼 Upload Bank Statement"
-                        }
-                    },
-                    {
-                        "type": "reply",
-                        "reply": {
                             "id": "chat_finance",
                             "title": "💬 Chat"
                         }
