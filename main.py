@@ -91,16 +91,32 @@ async def handle_webhook(request: Request):
             elif msg_type in ["image", "document"]:
                     try:
                         doc_type = get_user_intent(sender)
-                    
+
                         media_id = msg[msg_type]["id"]
+                        
+                        # Step 1: Get media metadata
                         media_metadata_url = f"https://graph.facebook.com/v19.0/{media_id}"
-                        media_metadata_response = requests.get(media_metadata_url, params={"access_token": "EAAR4EKodEE4BPFB9GZBXxJ62mjyz5BZChaRdY9ZAKSR8ttxwerG8Podj5VxsGDyPa33s804KPilAAUPmCLZBih6oCjdFtIvzZBh4DX9AAPROtMfkRlffIQ53Qht2HQUgC9fmAgfooWK7jbXGTuG0Uke1rZBxAOx3dRfLCQgYZBhPB5ZAzdptNQtIa653KFV4YcZBReXwigUPBTF1lsBwNi16ojzZCZCIrPt5PVpxZBbFYgxuJ3Ig0dIZD"})
+                        media_metadata_response = requests.get(media_metadata_url, params={"access_token": ACCESS_TOKEN})
+                        
+                        if media_metadata_response.status_code != 200:
+                            print("❌ Failed to fetch media metadata:", media_metadata_response.text)
+                            return  # Or handle error appropriately
+                        
                         media_url = media_metadata_response.json().get("url")
-
+                        
+                        # Step 2: Download the image
+                        headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
                         media_data_response = requests.get(media_url, headers=headers)
+                        
+                        if media_data_response.status_code != 200:
+                            print("❌ Failed to download media:", media_data_response.text)
+                            return  # Or handle error appropriately
+                        
                         file_bytes = media_data_response.content
-
+                        
+                        # Step 3: Run OCR
                         extracted_text = ocr_from_bytes(file_bytes)
+
 
                     except Exception as e:
                         print("OCR processing error:", e)
