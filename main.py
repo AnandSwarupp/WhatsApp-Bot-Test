@@ -18,7 +18,7 @@ from ocr import ocr_from_bytes
 app = FastAPI()
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
-ACCESS_TOKEN = "EAAR4EKodEE4BPKYiblA36ZC1XzkuauadSq1OlEiQ5xVVzYM4i2VMVBukxmUmkZBSl1pAZBU8HbxEU4oUv9ZA4jAZCP2VmXm3Md5lXU5hfNkKollW0SmoSpXHTWlaBCIZAOCd9aI3g2sPLSPL4pVjObPjVYEEQyQ5o309EAhmu2UhwuopcrXSdlAMX41O24l4HiyKxi0ikcjDhC9A8mtxRT0lAYtNZBuZC2vKQ5Whv5OsxHvHiz4ZD"
+ACCESS_TOKEN = "EAAR4EKodEE4BPFB9GZBXxJ62mjyz5BZChaRdY9ZAKSR8ttxwerG8Podj5VxsGDyPa33s804KPilAAUPmCLZBih6oCjdFtIvzZBh4DX9AAPROtMfkRlffIQ53Qht2HQUgC9fmAgfooWK7jbXGTuG0Uke1rZBxAOx3dRfLCQgYZBhPB5ZAzdptNQtIa653KFV4YcZBReXwigUPBTF1lsBwNi16ojzZCZCIrPt5PVpxZBbFYgxuJ3Ig0dIZD"
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 GRAPH_API_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
 
@@ -94,7 +94,7 @@ async def handle_webhook(request: Request):
                     
                         media_id = msg[msg_type]["id"]
                         media_metadata_url = f"https://graph.facebook.com/v19.0/{media_id}"
-                        media_metadata_response = requests.get(media_metadata_url, params={"access_token": "EAAR4EKodEE4BPKYiblA36ZC1XzkuauadSq1OlEiQ5xVVzYM4i2VMVBukxmUmkZBSl1pAZBU8HbxEU4oUv9ZA4jAZCP2VmXm3Md5lXU5hfNkKollW0SmoSpXHTWlaBCIZAOCd9aI3g2sPLSPL4pVjObPjVYEEQyQ5o309EAhmu2UhwuopcrXSdlAMX41O24l4HiyKxi0ikcjDhC9A8mtxRT0lAYtNZBuZC2vKQ5Whv5OsxHvHiz4ZD"})
+                        media_metadata_response = requests.get(media_metadata_url, params={"access_token": "EAAR4EKodEE4BPFB9GZBXxJ62mjyz5BZChaRdY9ZAKSR8ttxwerG8Podj5VxsGDyPa33s804KPilAAUPmCLZBih6oCjdFtIvzZBh4DX9AAPROtMfkRlffIQ53Qht2HQUgC9fmAgfooWK7jbXGTuG0Uke1rZBxAOx3dRfLCQgYZBhPB5ZAzdptNQtIa653KFV4YcZBReXwigUPBTF1lsBwNi16ojzZCZCIrPt5PVpxZBbFYgxuJ3Ig0dIZD"})
                         media_url = media_metadata_response.json().get("url")
 
                         media_data_response = requests.get(media_url, headers=headers)
