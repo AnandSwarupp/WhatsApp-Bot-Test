@@ -93,16 +93,14 @@ async def handle_webhook(request: Request):
                         doc_type = get_user_intent(sender)
                     
                         media_id = msg[msg_type]["id"]
-                        media_metadata_url = GRAPH_API_URL
-                        media_metadata_response = requests.get(media_metadata_url, headers=headers)
-                        media_url = media_metadata_response.json()["url"]
+                        media_metadata_url = f"https://graph.facebook.com/v19.0/{media_id}"
+                        media_metadata_response = requests.get(media_metadata_url, params={"access_token": "EAAR4EKodEE4BPKYiblA36ZC1XzkuauadSq1OlEiQ5xVVzYM4i2VMVBukxmUmkZBSl1pAZBU8HbxEU4oUv9ZA4jAZCP2VmXm3Md5lXU5hfNkKollW0SmoSpXHTWlaBCIZAOCd9aI3g2sPLSPL4pVjObPjVYEEQyQ5o309EAhmu2UhwuopcrXSdlAMX41O24l4HiyKxi0ikcjDhC9A8mtxRT0lAYtNZBuZC2vKQ5Whv5OsxHvHiz4ZD"})
+                        media_url = media_metadata_response.json().get("url")
 
                         media_data_response = requests.get(media_url, headers=headers)
                         file_bytes = media_data_response.content
 
                         extracted_text = ocr_from_bytes(file_bytes)
-
-                        send_message(sender, f"📄 Text extracted from your {doc_type.replace('_', ' ')}:\n\n{extracted_text}")
 
                     except Exception as e:
                         print("OCR processing error:", e)
