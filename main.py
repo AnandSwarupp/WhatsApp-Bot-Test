@@ -4,12 +4,22 @@ import json
 import os
 from fastapi.responses import PlainTextResponse
 from collections import defaultdict
+import random
+from auth import (
+    get_user_state, set_user_state, set_user_email, get_user_email,
+    generate_and_send_otp, get_user_otp, clear_user,
+    set_user_intent, get_user_intent
+)
+from whatsapp import send_message, send_button_message, handle_button_click
+from ocr import ocr_from_bytes
+
+
 
 app = FastAPI()
 
-VERIFY_TOKEN = "1234567890"
-ACCESS_TOKEN = "EAAR4EKodEE4BPAMQQMuq3XzuP9y0yZBPMjmm3QpNlqwBtQtkOnuIM520SzdI32JZB2m6S4mKFkDSyb5vHQ4VPc8xRtBg21WVyHQpOA1RzXQ45a9ijeOC9RZAP7czrZB0keuaFSAE9mHhxh0k9egimQ9qQQ1plf8N9b3JtVKw746r5qYWAEXPOye8vuoy1Pjj"
-PHONE_NUMBER_ID = "718433208015957"
+VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
+ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 GRAPH_API_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
 
 headers = {
@@ -18,6 +28,8 @@ headers = {
 }
 
 user_intent = defaultdict(lambda: "unknown")
+
+
 
 @app.get("/webhook")
 def verify_webhook(request: Request):
@@ -34,6 +46,7 @@ async def handle_webhook(request: Request):
     body = await request.json()
     print(json.dumps(body, indent=2))
 
+
     try:
         entry = body["entry"][0]["changes"][0]["value"]
         messages = entry.get("messages")
@@ -42,83 +55,61 @@ async def handle_webhook(request: Request):
             msg = messages[0]
             sender = msg["from"]
             msg_type = msg["type"]
+            text = msg["text"]["body"].strip() if msg_type == "text" else ""
 
             if msg_type == "text":
-                text = msg["text"]["body"].lower()
-                if "hello" in text:
-                    send_button_message(sender)
+                text = msg["text"]["body"].strip()
+
+                if text.lower() == "hello":
+                    set_user_state(sender, "awaiting_email")
+                    send_message(sender, "👋 Please enter your email to receive an OTP for verification.")
+
+                elif get_user_state(sender) == "awaiting_email":
+                    if "@" in text and "." in text:
+                        set_user_email(sender, text)
+                        generate_and_send_otp(sender, text)
+                        send_message(sender, "📧 OTP has been sent to your email. Please enter it here.")
+                    else:
+                        send_message(sender, "❌ Invalid email. Please try again.")
+
+                elif get_user_state(sender) == "awaiting_otp":
+                    if text == get_user_otp(sender):
+                        clear_user(sender)
+                        send_message(sender, "✅ OTP verified!")
+                        send_button_message(sender)
+                    else:
+                        send_message(sender, "❌ Incorrect OTP. Try again.")
+
                 else:
                     send_message(sender, f"You said: {text}")
 
             elif msg_type == "interactive":
                 button_id = msg["interactive"]["button_reply"]["id"]
+                user_intent[sender] = button_id 
                 handle_button_click(sender, button_id)
 
             elif msg_type in ["image", "document"]:
-                    doc_type = user_intent.get(sender, "unknown")
-                    send_message(sender, f"Thanks! We received your {doc_type}. We'll process it shortly.")
+                    try:
+                        doc_type = get_user_intent(sender)
+                    
+                        media_id = msg[msg_type]["id"]
+                        media_metadata_url = GRAPH_API_URL
+                        media_metadata_response = requests.get(media_metadata_url, headers=headers)
+                        media_url = media_metadata_response.json()["url"]
+
+                        media_data_response = requests.get(media_url, headers=headers)
+                        file_bytes = media_data_response.content
+
+                        extracted_text = ocr_from_bytes(file_bytes)
+
+                        send_message(sender, f"📄 Text extracted from your {doc_type.replace('_', ' ')}:\n\n{extracted_text}")
+
+                    except Exception as e:
+                        print("OCR processing error:", e)
+                        send_message(sender, "⚠️ There was an error processing your document. Please try again.")
+
 
     except Exception as e:
         print("Webhook Error:", e)
 
     return {"status": "ok"}
-
-def send_message(to: str, message: str):
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "text",
-        "text": {"body": message}
-    }
-    response = requests.post(GRAPH_API_URL, headers=headers, json=payload)
-    print(response.json())
-
-def send_button_message(to: str):
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "interactive",
-        "interactive": {
-            "type": "button",
-            "body": {
-                "text": "Welcome to FinBot! What would you like to do?"
-            },
-            "action": {
-                "buttons": [
-                    {
-                        "type": "reply",
-                        "reply": {
-                            "id": "upload_cheque",
-                            "title": "📓 Upload Cheque"
-                        }
-                    },
-                    {
-                        "type": "reply",
-                        "reply": {
-                            "id": "upload_invoice",
-                            "title": "💼 Upload Invoice"
-                        }
-                    },
-                    {
-                        "type": "reply",
-                        "reply": {
-                            "id": "chat_finance",
-                            "title": "💬 Chat"
-                        }
-                    }
-                ]
-            }
-        }
-    }
-    response = requests.post(GRAPH_API_URL, headers=headers, json=payload)
-    print(response.json())
-
-def handle_button_click(to: str, button_id: str):
-    if button_id.startswith("upload_"):
-        doc_type = button_id.replace("upload_", "")
-        user_intent[to] = doc_type
-        send_message(to, f"Please upload your {doc_type} now.")
-    elif button_id == "chat_finance":
-        send_message(to, "Great! Ask me any financial question, and I’ll help you.")
-    else:
-        send_message(to, "Invalid choice. Please try again.")
