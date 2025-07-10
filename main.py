@@ -18,7 +18,7 @@ from ocr import ocr_from_bytes
 app = FastAPI()
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
-ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
+ACCESS_TOKEN = "EAAR4EKodEE4BPKYiblA36ZC1XzkuauadSq1OlEiQ5xVVzYM4i2VMVBukxmUmkZBSl1pAZBU8HbxEU4oUv9ZA4jAZCP2VmXm3Md5lXU5hfNkKollW0SmoSpXHTWlaBCIZAOCd9aI3g2sPLSPL4pVjObPjVYEEQyQ5o309EAhmu2UhwuopcrXSdlAMX41O24l4HiyKxi0ikcjDhC9A8mtxRT0lAYtNZBuZC2vKQ5Whv5OsxHvHiz4ZD"
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 GRAPH_API_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
 
