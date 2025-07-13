@@ -1,7 +1,7 @@
 import os
 import requests
 
-AZURE_OCR_URL = os.getenv("AZURE_OCR_URL") 
+AZURE_OCR_URL = "https://botocr.cognitiveservices.azure.com/vision/v3.2/read/analyze"
 AZURE_KEY = os.getenv("AZURE_KEY")
 
 def ocr_from_bytes(file_bytes: bytes):
