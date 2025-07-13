@@ -12,13 +12,17 @@ from auth import (
 )
 from whatsapp import send_message, send_button_message, handle_button_click
 from ocr import ocr_from_bytes
+from fastapi.responses import JSONResponse
+import logging
 
+
+logging.basicConfig(level=logging.INFO)
 
 
 app = FastAPI()
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
-ACCESS_TOKEN = "EAAR4EKodEE4BPFB9GZBXxJ62mjyz5BZChaRdY9ZAKSR8ttxwerG8Podj5VxsGDyPa33s804KPilAAUPmCLZBih6oCjdFtIvzZBh4DX9AAPROtMfkRlffIQ53Qht2HQUgC9fmAgfooWK7jbXGTuG0Uke1rZBxAOx3dRfLCQgYZBhPB5ZAzdptNQtIa653KFV4YcZBReXwigUPBTF1lsBwNi16ojzZCZCIrPt5PVpxZBbFYgxuJ3Ig0dIZD"
+ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 GRAPH_API_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
 
@@ -93,34 +97,44 @@ async def handle_webhook(request: Request):
                         doc_type = get_user_intent(sender)
 
                         media_id = msg[msg_type]["id"]
-                        
+
                         # Step 1: Get media metadata
                         media_metadata_url = f"https://graph.facebook.com/v19.0/{media_id}"
                         media_metadata_response = requests.get(media_metadata_url, params={"access_token": ACCESS_TOKEN})
-                        
+
                         if media_metadata_response.status_code != 200:
-                            print("❌ Failed to fetch media metadata:", media_metadata_response.text)
-                            return  # Or handle error appropriately
-                        
+                            logging.error("Failed to fetch media metadata: %s", media_metadata_response.text)
+                            return JSONResponse(content={"error": "media fetch failed"}, status_code=500)
+
                         media_url = media_metadata_response.json().get("url")
-                        
+
                         # Step 2: Download the image
-                        headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
-                        media_data_response = requests.get(media_url, headers=headers)
-                        
+                        media_headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+                        media_data_response = requests.get(media_url, headers=media_headers)
+
                         if media_data_response.status_code != 200:
-                            print("❌ Failed to download media:", media_data_response.text)
-                            return  # Or handle error appropriately
-                        
+                            logging.error("Failed to download media: %s", media_data_response.text)
+                            return JSONResponse(content={"error": "media fetch failed"}, status_code=500)
+
                         file_bytes = media_data_response.content
-                        
+
                         # Step 3: Run OCR
                         extracted_text = ocr_from_bytes(file_bytes)
+
+                        send_message(sender, f"📄 Document type: {doc_type}\n📝 Extracted text:\n{extracted_text}")
+
 
 
                     except Exception as e:
                         print("OCR processing error:", e)
                         send_message(sender, "⚠️ There was an error processing your document. Please try again.")
+
+
+    except Exception as e:
+        print("Webhook Error:", e)
+
+    return {"status": "ok"}
+
 
 
     except Exception as e:
