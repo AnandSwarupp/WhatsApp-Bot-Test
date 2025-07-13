@@ -135,9 +135,3 @@ async def handle_webhook(request: Request):
 
     return {"status": "ok"}
 
-
-
-    except Exception as e:
-        print("Webhook Error:", e)
-
-    return {"status": "ok"}
