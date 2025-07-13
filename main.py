@@ -3,9 +3,20 @@ from fastapi.responses import JSONResponse
 import requests, os, json
 
 from auth import (
-    get_user_state, set_user_state, get_user_otp, clear_user,
-    mark_authenticated, is_authenticated, get_user_intent, set_user_intent
+    get_user_state,
+    set_user_state,
+    get_user_email,
+    set_user_email,
+    get_user_otp,
+    set_user_otp,
+    generate_and_send_otp,
+    is_authenticated,
+    mark_authenticated,
+    clear_user,
+    set_user_intent,
+    get_user_intent
 )
+
 from whatsapp import send_message, send_button_message
 from ocr import ocr_from_bytes
 from openai_utils import ask_openai
