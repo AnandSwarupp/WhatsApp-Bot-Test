@@ -1,137 +1,137 @@
 from fastapi import FastAPI, Request
-import requests
-import json
-import os
-from fastapi.responses import PlainTextResponse
-from collections import defaultdict
-import random
-from auth import (
-    get_user_state, set_user_state, set_user_email, get_user_email,
-    generate_and_send_otp, get_user_otp, clear_user,
-    set_user_intent, get_user_intent
-)
-from whatsapp import send_message, send_button_message, handle_button_click
-from ocr import ocr_from_bytes
 from fastapi.responses import JSONResponse
-import logging
+import requests, os, json
 
-
-logging.basicConfig(level=logging.INFO)
-
+from auth import (
+    get_user_state, set_user_state, get_user_otp, clear_user,
+    mark_authenticated, is_authenticated, get_user_intent, set_user_intent
+)
+from whatsapp import send_message, send_button_message
+from ocr import ocr_from_bytes
+from openai_utils import ask_openai
 
 app = FastAPI()
 
-VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
-ACCESS_TOKEN = "EAAR4EKodEE4BPAIe3k2WQjq8ACvKLdU5TvQFVedRDQofZBP0FZBZBfYjE5FZBw05nLkbSbzy8xNXxpp2YVWhpYuhUKAZClmdUlbZCZBxtvtYtZAWvEA1FAuqrifOuBqL8awz7TZB5H4OJZAnS3HztkJoUoY92JPZCkITMbqx3JSNRfKXxjEQ7lJcQoYJ6Vasj8NbRkNZBNGNXZAiaj5lTe2gwNByZBEfPfq2vTokeF1HxJ2O1L6zbqN9MZD"
+ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
-GRAPH_API_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
-
-headers = {
-    "Authorization": f"Bearer {ACCESS_TOKEN}",
-    "Content-Type": "application/json"
-}
-
-user_intent = defaultdict(lambda: "unknown")
-
-
-
-@app.get("/webhook")
-def verify_webhook(request: Request):
-    mode = request.query_params.get("hub.mode")
-    token = request.query_params.get("hub.verify_token")
-    challenge = request.query_params.get("hub.challenge")
-
-    if mode == "subscribe" and token == VERIFY_TOKEN:
-        return PlainTextResponse(content=challenge, status_code=200)
-    return PlainTextResponse("Invalid verification", status_code=403)
 
 @app.post("/webhook")
-async def handle_webhook(request: Request):
-    body = await request.json()
-    print(json.dumps(body, indent=2))
-
+async def webhook(request: Request):
+    data = await request.json()
+    print(json.dumps(data, indent=2))
 
     try:
-        entry = body["entry"][0]["changes"][0]["value"]
+        entry = data["entry"][0]["changes"][0]["value"]
         messages = entry.get("messages")
+        if not messages:
+            return {"status": "ok"}
 
-        if messages:
-            msg = messages[0]
-            sender = msg["from"]
-            msg_type = msg["type"]
-            text = msg["text"]["body"].strip() if msg_type == "text" else ""
+        msg = messages[0]
+        sender = msg["from"]
+        msg_type = msg["type"]
 
-            if msg_type == "text":
-                text = msg["text"]["body"].strip()
+        # OTP verification
+        if msg_type == "text":
+            text = msg["text"]["body"]
+            state = get_user_state(sender)
 
-                if text.lower() == "hello":
-                    set_user_state(sender, "awaiting_email")
-                    send_message(sender, "👋 Please enter your email to receive an OTP for verification.")
-
-                elif get_user_state(sender) == "awaiting_email":
-                    if "@" in text and "." in text:
-                        set_user_email(sender, text)
-                        generate_and_send_otp(sender, text)
-                        send_message(sender, "📧 OTP has been sent to your email. Please enter it here.")
-                    else:
-                        send_message(sender, "❌ Invalid email. Please try again.")
-
-                elif get_user_state(sender) == "awaiting_otp":
-                    if text == get_user_otp(sender):
-                        clear_user(sender)
-                        send_message(sender, "✅ OTP verified!")
-                        send_button_message(sender)
-                    else:
-                        send_message(sender, "❌ Incorrect OTP. Try again.")
-
+            if state == "awaiting_otp":
+                if text == get_user_otp(sender):
+                    clear_user(sender)
+                    mark_authenticated(sender)
+                    send_message(sender, "✅ OTP verified!")
+                    send_button_message(sender)
                 else:
-                    send_message(sender, f"You said: {text}")
+                    send_message(sender, "❌ Incorrect OTP. Try again.")
+                return {"status": "ok"}
 
-            elif msg_type == "interactive":
-                button_id = msg["interactive"]["button_reply"]["id"]
-                user_intent[sender] = button_id 
-                handle_button_click(sender, button_id)
+            elif text.lower() == "hello":
+                send_message(sender, "📧 Please enter your email for verification.")
+                set_user_state(sender, "awaiting_email")
+                return {"status": "ok"}
 
-            elif msg_type in ["image", "document"]:
-                    try:
-                        doc_type = get_user_intent(sender)
+            elif state == "awaiting_email":
+                from auth import generate_and_send_otp
+                generate_and_send_otp(sender, text)
+                send_message(sender, f"📨 OTP sent to {text}. Please reply with the code.")
+                return {"status": "ok"}
 
-                        media_id = msg[msg_type]["id"]
+            elif text.lower() == "status":
+                from auth import get_user_state, is_authenticated
+                send_message(sender, f"📌 State: {get_user_state(sender)} | Auth: {is_authenticated(sender)}")
+                return {"status": "ok"}
 
-                        # Step 1: Get media metadata
-                        media_metadata_url = f"https://graph.facebook.com/v19.0/{media_id}"
-                        media_metadata_response = requests.get(media_metadata_url, params={"access_token": ACCESS_TOKEN})
+        # Block unauthenticated users
+        if not is_authenticated(sender):
+            send_message(sender, "🔒 Please verify by saying 'hello' first.")
+            return {"status": "ok"}
 
-                        if media_metadata_response.status_code != 200:
-                            logging.error("Failed to fetch media metadata: %s", media_metadata_response.text)
-                            return JSONResponse(content={"error": "media fetch failed"}, status_code=500)
+        # Handle button clicks
+        if msg_type == "interactive":
+            button_id = msg["interactive"]["button_reply"]["id"]
+            set_user_intent(sender, button_id)
 
-                        media_url = media_metadata_response.json().get("url")
+            if button_id == "upload_invoice":
+                send_message(sender, "📤 Please upload your invoice (PDF or image).")
+            elif button_id == "upload_cheque":
+                send_message(sender, "📤 Please upload a scanned cheque.")
+            return {"status": "ok"}
 
-                        # Step 2: Download the image
-                        media_headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
-                        media_data_response = requests.get(media_url, headers=media_headers)
+        # Handle file upload
+        if msg_type in ["image", "document"]:
+            intent = get_user_intent(sender)
+            if intent not in ["upload_invoice", "upload_cheque"]:
+                send_message(sender, "❗ Please select an option first using the buttons.")
+                return {"status": "ok"}
 
-                        if media_data_response.status_code != 200:
-                            logging.error("Failed to download media: %s", media_data_response.text)
-                            return JSONResponse(content={"error": "media fetch failed"}, status_code=500)
+            media_id = msg[msg_type]["id"]
 
-                        file_bytes = media_data_response.content
+            # Get media URL
+            url = f"https://graph.facebook.com/v19.0/{media_id}"
+            meta = requests.get(url, params={"access_token": ACCESS_TOKEN}).json()
+            media_url = meta["url"]
 
-                        # Step 3: Run OCR
-                        extracted_text = ocr_from_bytes(file_bytes)
+            # Download file
+            file_bytes = requests.get(media_url, headers={"Authorization": f"Bearer {ACCESS_TOKEN}"}).content
 
-                        send_message(sender, f"📄 Document type: {doc_type}\n📝 Extracted text:\n{extracted_text}")
+            # OCR processing
+            ocr_text = ocr_from_bytes(file_bytes)
+            if ocr_text.startswith("❌"):
+                send_message(sender, ocr_text)
+                return {"status": "ok"}
 
+            # Prompt setup
+            if intent == "upload_invoice":
+                prompt = f"Extract invoice number, customer name, and amount from this:\n{ocr_text}"
+            else:
+                prompt = f"Extract account holder, receiver, and amount from this cheque text:\n{ocr_text}"
 
+            # OpenAI call
+            try:
+                response_text = ask_openai(prompt)
+                parsed = json.loads(response_text)
+            except Exception as e:
+                print("❌ OpenAI error:", e)
+                send_message(sender, "⚠️ Failed to understand the document. Try again.")
+                return {"status": "ok"}
 
-                    except Exception as e:
-                        print("OCR processing error:", e)
-                        send_message(sender, "⚠️ There was an error processing your document. Please try again.")
+            # Send formatted message
+            if intent == "upload_invoice":
+                reply = f"""🧾 Invoice Parsed:
+                Customer Name: {parsed.get("customer_name")}
+                Invoice Number: {parsed.get("invoice_number")}
+                Amount: ₹{parsed.get("amount")}"""
+            else:
+                reply = f"""🏦 Cheque Parsed:
+                Account Holder: {parsed.get("account_holder")}
+                Receiver: {parsed.get("receiver")}
+                Amount: ₹{parsed.get("amount")}"""
 
+            send_message(sender, reply)
+            return {"status": "ok"}
 
     except Exception as e:
-        print("Webhook Error:", e)
+        print("Unhandled error:", e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
     return {"status": "ok"}
-
