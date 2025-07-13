@@ -41,7 +41,7 @@ async def webhook(request: Request):
         sender = msg["from"]
         msg_type = msg["type"]
 
-        # OTP verification
+        # OTP verification and authentication
         if msg_type == "text":
             text = msg["text"]["body"]
             state = get_user_state(sender)
@@ -62,7 +62,6 @@ async def webhook(request: Request):
                 return {"status": "ok"}
 
             elif state == "awaiting_email":
-                from auth import generate_and_send_otp
                 generate_and_send_otp(sender, text)
                 send_message(sender, f"📨 OTP sent to {text}. Please reply with the code.")
                 return {"status": "ok"}
@@ -87,7 +86,7 @@ async def webhook(request: Request):
                 send_message(sender, "📤 Please upload a scanned cheque.")
             return {"status": "ok"}
 
-        # Handle file upload
+        # Handle file uploads
         if msg_type in ["image", "document"]:
             intent = get_user_intent(sender)
             if intent not in ["upload_invoice", "upload_cheque"]:
@@ -95,19 +94,25 @@ async def webhook(request: Request):
                 return {"status": "ok"}
 
             media_id = msg[msg_type]["id"]
+            print(f"📎 Media ID: {media_id}")
 
             # Get media URL
-            url = f"https://graph.facebook.com/v19.0/{media_id}"
-            meta = requests.get(url, params={"access_token": ACCESS_TOKEN}).json()
-            media_url = meta["url"]
+            meta_url = f"https://graph.facebook.com/v19.0/{media_id}"
+            meta = requests.get(meta_url, params={"access_token": ACCESS_TOKEN}).json()
+            media_url = meta.get("url")
+            print(f"📥 Media URL: {media_url}")
 
             # Download file
             file_bytes = requests.get(media_url, headers={"Authorization": f"Bearer {ACCESS_TOKEN}"}).content
+            print(f"📂 File size: {len(file_bytes)} bytes")
 
             # OCR processing
-            ocr_text = ocr_from_bytes(file_bytes)
-            if ocr_text.startswith("❌"):
-                send_message(sender, ocr_text)
+            try:
+                ocr_text = ocr_from_bytes(file_bytes)
+                print(f"📄 OCR Text:\n{ocr_text}")
+            except Exception as e:
+                print("❌ OCR Error:", e)
+                send_message(sender, "❌ OCR failed. Please upload a clear image or PDF.")
                 return {"status": "ok"}
 
             # Prompt setup
@@ -127,15 +132,9 @@ async def webhook(request: Request):
 
             # Send formatted message
             if intent == "upload_invoice":
-                reply = f"""🧾 Invoice Parsed:
-                Customer Name: {parsed.get("customer_name")}
-                Invoice Number: {parsed.get("invoice_number")}
-                Amount: ₹{parsed.get("amount")}"""
+                reply = f"""🧾 Invoice Parsed:\nCustomer Name: {parsed.get("customer_name")}\nInvoice Number: {parsed.get("invoice_number")}\nAmount: ₹{parsed.get("amount")}"""
             else:
-                reply = f"""🏦 Cheque Parsed:
-                Account Holder: {parsed.get("account_holder")}
-                Receiver: {parsed.get("receiver")}
-                Amount: ₹{parsed.get("amount")}"""
+                reply = f"""🏦 Cheque Parsed:\nAccount Holder: {parsed.get("account_holder")}\nReceiver: {parsed.get("receiver")}\nAmount: ₹{parsed.get("amount")}"""
 
             send_message(sender, reply)
             return {"status": "ok"}
