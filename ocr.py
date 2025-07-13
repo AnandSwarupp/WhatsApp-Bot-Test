@@ -1,32 +1,51 @@
 import os
 import requests
 
-AZURE_OCR_URL = "https://botocr.cognitiveservices.azure.com/vision/v3.2/read/analyze"
+AZURE_OCR_URL = os.getenv("AZURE_OCR_URL")
 AZURE_KEY = os.getenv("AZURE_KEY")
 
-def ocr_from_bytes(file_bytes: bytes):
+def ocr_from_bytes(file_bytes: bytes) -> str:
     headers = {
-        'Ocp-Apim-Subscription-Key': AZURE_KEY,
-        'Content-Type': 'application/octet-stream'
+        "Ocp-Apim-Subscription-Key": AZURE_KEY,
+        "Content-Type": "application/octet-stream"
     }
 
-    response = requests.post(AZURE_OCR_URL, headers=headers, data=file_bytes)
-
-    if response.status_code != 200:
-        print("Azure OCR Response:", response.text)
-        return f"❌ Azure OCR error: {response.text}"
-
-    result = response.json()
-
-    # This assumes 'regions' exist — some newer Azure OCR APIs return different formats
-    extracted_text = []
     try:
-        for region in result.get("regions", []):
-            for line in region.get("lines", []):
-                line_text = " ".join([word["text"] for word in line["words"]])
-                extracted_text.append(line_text)
-    except KeyError:
-        return "❌ Unexpected OCR response format."
+        # Submit OCR request
+        response = requests.post(AZURE_OCR_URL, headers=headers, data=file_bytes)
+        if response.status_code != 202:
+            print("❌ Azure OCR submit error:", response.text)
+            return f"❌ Azure OCR error: {response.text}"
 
-    return "\n".join(extracted_text) if extracted_text else "❌ No text detected."
+        # Poll result from operation-location header
+        result_url = response.headers.get("Operation-Location")
+        if not result_url:
+            return "❌ Azure OCR error: Missing Operation-Location"
 
+        # Polling loop
+        import time
+        for _ in range(10):  # wait max ~5s
+            time.sleep(0.5)
+            result = requests.get(result_url, headers={"Ocp-Apim-Subscription-Key": AZURE_KEY})
+            result_json = result.json()
+            status = result_json.get("status")
+
+            if status == "succeeded":
+                break
+            elif status == "failed":
+                return "❌ Azure OCR failed to analyze image."
+
+        else:
+            return "❌ Azure OCR timed out."
+
+        # Extract text
+        extracted_text = []
+        for page in result_json["analyzeResult"]["readResults"]:
+            for line in page.get("lines", []):
+                extracted_text.append(line["text"])
+
+        return "\n".join(extracted_text) if extracted_text else "❌ No text detected."
+
+    except Exception as e:
+        print("❌ Azure OCR exception:", e)
+        return f"❌ Azure OCR error: {e}"
