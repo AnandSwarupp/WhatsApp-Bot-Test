@@ -10,6 +10,9 @@ user_emails = {}
 user_otps = {}
 user_intent = {}
 
+# ✅ Add this
+authenticated_users = set()
+
 def get_user_state(sender):
     return user_states.get(sender)
 
@@ -32,6 +35,15 @@ def clear_user(sender):
     user_states.pop(sender, None)
     user_otps.pop(sender, None)
     user_emails.pop(sender, None)
+    # ❗️Do not clear from authenticated_users here!
+
+# ✅ Add these
+def mark_authenticated(sender):
+    authenticated_users.add(sender)
+    set_user_state(sender, "authenticated")
+
+def is_authenticated(sender):
+    return sender in authenticated_users
 
 def send_otp_email(to_email: str, otp: str):
     msg = EmailMessage()
@@ -60,4 +72,5 @@ def set_user_intent(sender, intent):
 
 def get_user_intent(sender):
     return user_intent.get(sender, "unknown")
+
 
