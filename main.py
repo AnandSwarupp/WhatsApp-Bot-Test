@@ -68,7 +68,6 @@ async def webhook(request: Request):
                 return {"status": "ok"}
 
             elif text.lower() == "status":
-                from auth import get_user_state, is_authenticated
                 send_message(sender, f"📌 State: {get_user_state(sender)} | Auth: {is_authenticated(sender)}")
                 return {"status": "ok"}
 
