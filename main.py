@@ -12,7 +12,7 @@ from openai_utils import ask_openai
 
 app = FastAPI()
 
-ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
+ACCESS_TOKEN = "EAAR4EKodEE4BPEcUjEYqeK9w5C6bY8TT4RHZAS5DPTuFbEtpZBiE0zZCxwVIwNeHShjIqwqzOcKQe7CGv80dJNUGo86nrO7pZBeNqgksVYqBbmamMtvtbJUwGZBHpajAkDCWEx4HcT8wfyexWfzM11e0C8oorpriQQVtPzefp2cXpF14ag55flZCRb8egpMeP3V5ZAd24ZCuegbmWKnZCZCIaVZCQHrTK1HEl9PyVaUdu6bGIQe0QZDZD"
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 
 @app.post("/webhook")
