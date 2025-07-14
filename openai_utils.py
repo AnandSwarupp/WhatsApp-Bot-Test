@@ -22,23 +22,32 @@ def ask_openai(prompt: str) -> str:
         "temperature": 0,
         "max_tokens": 500
     }
-
+    
     try:
-        print("try block started")
+        print("Sending request to OpenAI...")
         response = requests.post(url, headers=headers, json=payload)
-        print(response.status_code, response.text)
-    
+        print("Status:", response.status_code)
+        print("Raw text:", response.text)
+
         response.raise_for_status()
-    
+
+        if not response.text:
+            return "❌ OpenAI returned an empty response."
+
         try:
             result = response.json()
             print("✅ OpenAI Result:", result)
-            return result["choices"][0]["message"]["content"]
+
+            # Extra safety check
+            if "choices" in result and result["choices"]:
+                return result["choices"][0]["message"]["content"]
+            else:
+                return "❌ No choices found in OpenAI response."
+
         except ValueError as json_err:
             print("❌ JSON Decode Error:", json_err)
-            return "❌ Failed to parse OpenAI response."
-    
+            return f"❌ Failed to parse OpenAI response: {json_err}"
+
     except requests.exceptions.RequestException as e:
         print("❌ OpenAI error:", e)
         return f"❌ OpenAI error: {e}"
-
