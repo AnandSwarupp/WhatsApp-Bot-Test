@@ -24,7 +24,9 @@ def ask_openai(prompt: str) -> str:
     }
 
     try:
+        print("try block started")
         response = requests.post(url, headers=headers, json=payload)
+        print(response)
         response.raise_for_status()
         result = response.json()
         return result["choices"][0]["message"]["content"]
