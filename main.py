@@ -124,11 +124,20 @@ async def webhook(request: Request):
             # OpenAI call
             try:
                 response_text = ask_openai(prompt)
-                parsed = json.loads(response_text)
+                print(f"🤖 OpenAI Raw Response:\n{response_text}")
+            
+                # Manual parsing (fallback if JSON not returned)
+                parsed = {}
+                for line in response_text.splitlines():
+                    if ":" in line:
+                        key, value = line.split(":", 1)
+                        parsed[key.strip().lower().replace(" ", "_")] = value.strip()
+            
             except Exception as e:
                 print("❌ OpenAI error:", e)
                 send_message(sender, "⚠️ Failed to understand the document. Try again.")
                 return {"status": "ok"}
+
 
             # Send formatted message
             if intent == "upload_invoice":
