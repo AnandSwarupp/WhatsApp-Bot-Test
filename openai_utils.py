@@ -29,6 +29,7 @@ def ask_openai(prompt: str) -> str:
         print(response)
         response.raise_for_status()
         result = response.json()
+        print(result)
         return result["choices"][0]["message"]["content"]
 
     except requests.exceptions.RequestException as e:
