@@ -26,12 +26,19 @@ def ask_openai(prompt: str) -> str:
     try:
         print("try block started")
         response = requests.post(url, headers=headers, json=payload)
-        print(response)
+        print(response.status_code, response.text)
+    
         response.raise_for_status()
-        result = response.json()
-        print(result)
-        return result["choices"][0]["message"]["content"]
-
+    
+        try:
+            result = response.json()
+            print("✅ OpenAI Result:", result)
+            return result["choices"][0]["message"]["content"]
+        except ValueError as json_err:
+            print("❌ JSON Decode Error:", json_err)
+            return "❌ Failed to parse OpenAI response."
+    
     except requests.exceptions.RequestException as e:
         print("❌ OpenAI error:", e)
         return f"❌ OpenAI error: {e}"
+
