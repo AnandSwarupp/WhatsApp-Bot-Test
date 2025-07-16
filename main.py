@@ -41,7 +41,7 @@ async def webhook(request: Request):
         sender = msg["from"]
         msg_type = msg["type"]
 
-        # OTP verification and authentication
+        # OTP verification and authenticatio
         if msg_type == "text":
             text = msg["text"]["body"]
             state = get_user_state(sender)
