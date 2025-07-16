@@ -197,10 +197,10 @@ async def webhook(request: Request):
 
             # Send formatted message
             if intent == "upload_invoice":
-                reply = f"""🧾 Invoice Parsed:\nCustomer Name: {parsed.get("customer_name")}\nInvoice Number: {parsed.get("invoice_number")}\nAmount: ₹{parsed.get("amount")}"""
+                reply = response_text
             else:
-                reply = f"""🏦 Cheque Parsed:\nAccount Holder: {parsed.get("account_holder")}\nReceiver: {parsed.get("receiver")}\nAmount: ₹{parsed.get("amount")}"""
-
+                reply = response_text
+                
             send_message(sender, reply)
             return {"status": "ok"}
 
