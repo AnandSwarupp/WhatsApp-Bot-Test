@@ -115,12 +115,68 @@ async def webhook(request: Request):
                 send_message(sender, "❌ OCR failed. Please upload a clear image or PDF.")
                 return {"status": "ok"}
 
-            # Prompt setup
             if intent == "upload_invoice":
-                prompt = f"Extract Invoice Number, Seller Name, Buyer Name, Date, Item, Quantity and amount from this:\n{ocr_text}"
-            else:
-                prompt = f"Extract Account Holder Name(it is mostaly located in the bottom right on the image . and it is the signing person so the name written below the signature.),Receiver Name(it is written after the 'pay', the name of the person whome the money will be sent to), Date, Bank Name, Cheique Number and amount from this cheque text:\n{ocr_text}"
+                prompt = f"""
+                    You are an intelligent OCR post-processor for invoices.
 
+                    Extract the following fields clearly from the raw OCR text below:
+                    - Invoice Number
+                    - Seller Name
+                    - Buyer Name
+                    - Invoice Date
+                    - Item(s)
+                    - Quantity
+                    - Amount (Total)
+
+                    If any field is missing or unclear, write "Not Found".
+
+                    OCR Text:
+                    \"\"\"
+                    {ocr_text}
+                    \"\"\"
+
+                    Return the output in this format:
+                    Invoice Number: ...
+                    Seller Name: ...
+                    Buyer Name: ...
+                    Invoice Date: ...
+                    Items:
+                    - Item: ...
+                        Quantity: ...
+                        Amount: ...
+                    Total Amount: ...
+                    """
+            elif intent == "upload_cheique":
+                prompt = prompt = f"""
+                    You are an intelligent OCR post-processor for bank cheques.
+
+                    Extract the following details from the OCR text of a cheque:
+                    - Account Holder Name (usually printed near the bottom-right or near the signature)
+                    - Receiver Name (the person being paid, appears after the word "Pay" or "Pay to the order of")
+                    - Cheque Date
+                    - Bank Name
+                    - Cheque Number
+                    - Amount (in numbers or words)
+
+                    If a field is missing, write "Not Found".
+
+                    OCR Text:
+                    \"\"\"
+                    {ocr_text}
+                    \"\"\"
+
+                    Return the result in this format:
+                    Account Holder Name: ...
+                    Receiver Name: ...
+                    Cheque Date: ...
+                    Bank Name: ...
+                    Cheque Number: ...
+                    Amount: ...
+                    """
+            
+            else:
+                print("No valid field found!!!")
+                
             # OpenAI call
             try:
                 response_text = ask_openai(prompt)
