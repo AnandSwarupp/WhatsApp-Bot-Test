@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-import requests, os, json, FastAPI
+import requests, os, json
 
 from auth import (
     get_user_state,
