@@ -117,9 +117,9 @@ async def webhook(request: Request):
 
             # Prompt setup
             if intent == "upload_invoice":
-                prompt = f"Extract invoice number, customer name, and amount from this:\n{ocr_text}"
+                prompt = f"Extract Invoice Number, Seller Name, Buyer Name, Date, Item, Quantity and amount from this:\n{ocr_text}"
             else:
-                prompt = f"Extract account holder, receiver, and amount from this cheque text:\n{ocr_text}"
+                prompt = f"Extract Account Holder Name(it is mostaly located in the bottom right on the image . and it is the signing person so the name written below the signature.),Receiver Name(it is written after the 'pay', the name of the person whome the money will be sent to), Date, Bank Name, Cheique Number and amount from this cheque text:\n{ocr_text}"
 
             # OpenAI call
             try:
