@@ -151,8 +151,8 @@ async def webhook(request: Request):
                     You are an intelligent OCR post-processor for bank cheques.
 
                     Extract the following details from the OCR text of a cheque:
-                    - Account Holder Name (usually printed near the bottom-right or near the signature)
-                    - Receiver Name (the person being paid, appears after the word "Pay" or "Pay to the order of")
+                    - Account Holder Name (Give the signing authority name.)
+                    - Receiver Name (the person being paid, appears after the word "Pay")
                     - Cheque Date
                     - Bank Name
                     - Cheque Number
