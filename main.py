@@ -146,7 +146,7 @@ async def webhook(request: Request):
                         Amount: ...
                     Total Amount: ...
                     """
-            elif intent == "upload_cheique":
+            elif intent == "upload_cheque":
                 prompt = prompt = f"""
                     You are an intelligent OCR post-processor for bank cheques.
 
