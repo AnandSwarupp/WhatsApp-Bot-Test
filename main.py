@@ -147,25 +147,26 @@ async def webhook(request: Request):
                     Total Amount: ...
                     """
             elif intent == "upload_cheque":
-                prompt = prompt = f"""
-                    You are an intelligent OCR post-processor for bank cheques.
-
-                    Extract the following details from the OCR text of a cheque:
-                    - Account Holder Name (Give the signing authority name.)
-                    - Receiver Name (the person being paid, appears after the word "Pay")
-                    - Cheque Date
-                    - Bank Name
-                    - Cheque Number
-                    - Amount (in numbers or words)
-
-                    If a field is missing, write "Not Found".
-
+                prompt = f"""
+                    You are a highly accurate OCR post-processor for scanned Indian bank cheques.
+                    
+                    Please extract the following information from the cheque text, using context clues when necessary:
+                    
+                    - **Account Holder Name**: This is usually printed at the bottom-right or under the signature line.
+                    - **Receiver Name**: The person or entity being paid. This usually appears after "PAY" or "Pay to the order of".
+                    - **Cheque Date**: Located in the upper-right corner, in DDMMYYYY or DD/MM/YYYY format.
+                    - **Bank Name**: Usually printed in the top-left corner of the cheque.
+                    - **Cheque Number**: If not printed, say "Not Found". Do not use the date.
+                    - **Amount**: Extract the full numerical value of the cheque in INR.
+                    
+                    If any information is missing, say "Not Found".
+                    
                     OCR Text:
                     \"\"\"
                     {ocr_text}
                     \"\"\"
-
-                    Return the result in this format:
+                    
+                    Return output in this format:
                     Account Holder Name: ...
                     Receiver Name: ...
                     Cheque Date: ...
@@ -173,6 +174,7 @@ async def webhook(request: Request):
                     Cheque Number: ...
                     Amount: ...
                     """
+
             
             else:
                 print("No valid field found!!!")
