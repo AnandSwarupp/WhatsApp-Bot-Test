@@ -157,7 +157,7 @@ async def webhook(request: Request):
                     - **Account Holder Name**: This is the person who signed the cheque. It is usually printed or written at the bottom-right, near the signature line.
                     - **Cheque Date**: Usually in the top-right corner, formatted like DDMMYYYY.
                     - **Bank Name**: Printed in the top-left.
-                    - **Cheque Number**: Located either at the bottom MICR line or top corners. It's a 6-digit or more number and **should NOT be confused with the date**.
+                    - **Account Number**: Written after A/c No. , basicallly below the amount**.
                     - **Amount**: Extract the full amount in numerals.
                     
                     Ignore static texts like "OR BEARER", "Rupees", etc.
