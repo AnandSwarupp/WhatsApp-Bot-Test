@@ -148,33 +148,32 @@ async def webhook(request: Request):
                     """
             elif intent == "upload_cheque":
                 prompt = f"""
-                    You are a highly accurate OCR post-processor for scanned Indian bank cheques.
-                    
-                    Please extract the following information from the cheque text, using context clues when necessary:
-                    
-                    - **Account Holder Name**: This is usually printed at the bottom-right or under the signature line.
-                    - **Receiver Name**: The person or entity being paid. This usually appears after "PAY" or "Pay to the order of".
-                    - **Cheque Date**: Located in the upper-right corner, in DDMMYYYY or DD/MM/YYYY format.
-                    - **Bank Name**: Usually printed in the top-left corner of the cheque.
-                    - **Cheque Number**: If not printed, say "Not Found". Do not use the date.
-                    - **Amount**: Extract the full numerical value of the cheque in INR.
-                    
-                    If any information is missing, say "Not Found".
-                    
-                    OCR Text:
-                    \"\"\"
-                    {ocr_text}
-                    \"\"\"
-                    
-                    Return output in this format:
-                    Account Holder Name: ...
-                    Receiver Name: ...
-                    Cheque Date: ...
-                    Bank Name: ...
-                    Cheque Number: ...
-                    Amount: ...
-                    """
-
+                You are a smart OCR post-processor for scanned Indian bank cheques.
+                
+                Please extract the following fields from the OCR text, based on their visual or textual context. Return "Not Found" if something is missing.
+                
+                Instructions:
+                - **Account Holder Name**: Usually located at the bottom-right of the cheque, near or under the signature line.
+                - **Receiver Name**: Appears after "PAY" or "Pay to the order of".
+                - **Cheque Date**: Written inside or near the box labeled "DDMMYYYY" or "Dated".
+                - **Bank Name**: Usually printed prominently at the top-left corner.
+                - **Cheque Number**: Typically found at the top-right or bottom corners. Do NOT use the date as cheque number.
+                - **Amount**: Match the number (like ₹ 1,23,45,678.00) with the words ("One Crore...").
+                
+                Here is the raw OCR output:
+                \"\"\"
+                {ocr_text}
+                \"\"\"
+                
+                Please return the output in this format:
+                
+                Account Holder Name: ...
+                Receiver Name: ...
+                Cheque Date: ...
+                Bank Name: ...
+                Cheque Number: ...
+                Amount: ...
+                """
             
             else:
                 print("No valid field found!!!")
