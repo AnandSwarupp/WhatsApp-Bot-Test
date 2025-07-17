@@ -69,6 +69,10 @@ async def webhook(request: Request):
             elif text.lower() == "status":
                 send_message(sender, f"📌 State: {get_user_state(sender)} | Auth: {is_authenticated(sender)}")
                 return {"status": "ok"}
+                
+            else:
+                send_message(sender, "👋 Please type 'hello' to begin chat with FinBot!")
+                return {"status": "ok"}
 
         # Block unauthenticated users
         if not is_authenticated(sender):
