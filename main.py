@@ -188,7 +188,6 @@ async def webhook(request: Request):
                     if ":" in line:
                         key, value = line.split(":", 1)
                         parsed[key.strip().lower().replace(" ", "_")] = value.strip()
-                send_message(sender, "Your document has been uploaded successfully.")
             
             except Exception as e:
                 print("❌ OpenAI error:", e)
@@ -199,13 +198,12 @@ async def webhook(request: Request):
             # Send formatted message
             if intent == "upload_invoice":
                 reply = response_text
-                send_message(sender, "Your document has been uploaded successfully.")
                 
             else:
                 reply = response_text
-                send_message(sender, "Your document has been uploaded successfully.")
                 
             send_message(sender, reply)
+            send_message(sender, "✅ Your document has been uploaded successfully.")
             return {"status": "ok"}
 
     except Exception as e:
