@@ -23,7 +23,7 @@ from openai_utils import ask_openai
 
 app = FastAPI()
 
-ACCESS_TOKEN = "EAAR4EKodEE4BPEZANYa4ww7BZAonoK1xbgPZAHFDj03d8cpShXOuup9TlZCROwbAtvXpNcebLggdearAwn5b6BluzBuvzcfY6dL6pV8vK3QMRPsMdHDk0LTZCXNShrP7vepQfktSWzaHrdwtN1fZAviGQwFGwophYLIuapKXMiVqUlRvIyiGIc3SYgfGssYUWxmbnMRbf4CcUeBQyJPZAnao8AUJwnTXMk0mXvKfdY0S2HksAZDZD"
+ACCESS_TOKEN = "EAAR4EKodEE4BPCG07q7ZCwEx0eb7BccisVLMJTqc4CD4vL8xaZByDkTZAO411UB9wZBaM12899iWCOgytzvvQwRNe3jIwssU6aS4au3Gap7UZAr6QHoEmq039f1XvsAfT3YpdSrs4GbZCdif5sO0W1ZCQfsvUkm8ZCfZCuLQ98agdGv9oJom1S7ACwFj3SQuDODZCxXnsysfZCIBJjIykgvGyX8wnFsPwlaoYZAzhT0J5jAnHghhwAEfuQZDZD"
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 
 @app.post("/webhook")
@@ -158,7 +158,7 @@ async def webhook(request: Request):
                     - **Cheque Date**: Usually in the top-right corner, formatted like DDMMYYYY.
                     - **Bank Name**: Printed in the top-left.
                     - **Cheque Number**: Located either at the bottom MICR line or top corners. It's a 6-digit or more number and **should NOT be confused with the date**.
-                    - **Amount**: Extract the full amount in words and/or numerals. Correct common OCR mistakes like "Lake" → "Lakh".
+                    - **Amount**: Extract the full amount in numerals.
                     
                     Ignore static texts like "OR BEARER", "Rupees", etc.
                     
