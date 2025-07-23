@@ -578,7 +578,7 @@ async def webhook(request: Request):
             
                     # Upload complete data to Supabase
                     email, cheque_number, account_holder, bank_name, amount, date = cheque
-                    response = supabase.table("upload_cheque").insert({
+                    response = supabase.table("upload_cheique").insert({
                         "email": email,
                         "cheque_number": cheque_number,
                         "account_holder": account_holder,
