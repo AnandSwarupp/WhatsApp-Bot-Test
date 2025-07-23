@@ -174,48 +174,55 @@ async def webhook(request: Request):
                 session_data = get_user_session(sender)
                 pending_rows = session_data.get("pending_rows", [])
                 completed_rows = session_data.get("completed_rows", [])
+                all_matches = session_data.get("all_matches", [])
             
                 if not pending_rows:
-                    send_message(sender, "✅ All items uploaded.")
-                    set_user_state(sender, None)
+                    send_message(sender, "✅ All rows completed.")
                     return {"status": "ok"}
             
-                current = pending_rows[0]
-                row = list(current["row"])
-                missing_fields = current["missing_fields"]
+                current_row_data = pending_rows[0]
+                row = list(current_row_data["row"])
+                missing_fields = current_row_data["missing_fields"]
             
-                # Get current missing field to fill
-                field = list(missing_fields.keys())[0]
-                value = message_text.strip()
+                current_field = list(missing_fields.keys())[0]
+                row_idx = ["email", "invoice_number", "sellers_name", "buyers_name", "date", "item", "quantity", "amount"].index(current_field)
             
-                # Cast type if needed
-                try:
-                    if field in ["quantity", "amount"]:
-                        value = int(value)
-                except:
-                    send_message(sender, f"❌ '{field}' must be a number. Please re-enter it:")
-                    return {"status": "ok"}
+                # Update the field with the user's message
+                if current_field == "date":
+                    formatted = format_date(message_text)
+                    if not formatted:
+                        send_message(sender, "❌ Invalid date format. Use DD/MM/YYYY or DDMMYYYY.")
+                        return {"status": "ok"}
+                    row[row_idx] = formatted
+                elif current_field in ["quantity", "amount"]:
+                    try:
+                        row[row_idx] = int(message_text.strip())
+                    except ValueError:
+                        send_message(sender, f"❌ Please enter a valid number for {current_field}.")
+                        return {"status": "ok"}
+                else:
+                    row[row_idx] = message_text.strip()
             
-                # Update the row
-                field_index = ["email", "invoice_number", "sellers_name", "buyers_name", "date", "item", "quantity", "amount"].index(field)
-                row[field_index] = value
-                del missing_fields[field]
+                del missing_fields[current_field]
             
                 if missing_fields:
-                    # Still more fields to fill for this row
-                    current["row"] = tuple(row)
-                    current["missing_fields"] = missing_fields
-                    pending_rows[0] = current
+                    # Still more fields to fill
+                    current_row_data["row"] = tuple(row)
                     set_user_session(sender, {
                         "pending_rows": pending_rows,
-                        "completed_rows": completed_rows
+                        "completed_rows": completed_rows,
+                        "all_matches": all_matches
                     })
                     next_field = list(missing_fields.keys())[0]
-                    send_message(sender, f"Please enter the value for '{next_field}':")
+                    send_message(sender, f"📌 Enter value for '{next_field}':")
                     return {"status": "ok"}
                 else:
-                    # All missing fields filled — insert into Supabase
+                    # Row is now complete — insert and match
+                    pending_rows.pop(0)
+                    completed_rows.append(tuple(row))
                     email, invoice_number, sellers_name, buyers_name, date, item, quantity, amount = row
+            
+                    # Insert into Supabase
                     supabase.table("upload_invoice").insert({
                         "email": email,
                         "invoice_number": invoice_number,
@@ -227,22 +234,51 @@ async def webhook(request: Request):
                         "amount": amount
                     }).execute()
             
-                    completed_rows.append(tuple(row))
-                    pending_rows.pop(0)
+                    # Match against tally_invoice
+                    match_result = supabase.table("tally_invoice").select("*").match({
+                        "invoice_number": invoice_number,
+                        "sellers_name": sellers_name,
+                        "buyers_name": buyers_name,
+                        "date": date,
+                        "item": item,
+                        "quantity": quantity,
+                        "amount": amount
+                    }).execute()
             
+                    all_matches.append(bool(match_result.data))
+            
+                    # Save updated session
                     set_user_session(sender, {
                         "pending_rows": pending_rows,
-                        "completed_rows": completed_rows
+                        "completed_rows": completed_rows,
+                        "all_matches": all_matches
                     })
             
                     if pending_rows:
-                        next_field = list(pending_rows[0]["missing_fields"].keys())[0]
-                        send_message(sender, f"✅ Item saved. Now enter value for '{next_field}':")
+                        next_missing = list(pending_rows[0]["missing_fields"].keys())[0]
+                        send_message(sender, f"📌 Next row — enter value for '{next_missing}':")
+                        return {"status": "ok"}
                     else:
-                        send_message(sender, f"✅ All invoice items uploaded successfully.")
-                        set_user_state(sender, None)
+                        match_count = sum(all_matches)
+                        total_items = len(completed_rows)
             
-                    return {"status": "ok"}
+                        invoice_number = completed_rows[0][1]
+                        date = completed_rows[0][4]
+                        sellers_name = completed_rows[0][2]
+                        buyers_name = completed_rows[0][3]
+            
+                        summary = f"""
+            ✅ Invoice {invoice_number} processed
+            📅 Date: {date}
+            👤 Seller: {sellers_name}
+            👥 Buyer: {buyers_name}
+            📊 Items: {total_items} ({match_count} matched)
+                        """
+                        send_message(sender, summary.strip())
+                        set_user_state(sender, None)
+                        clear_user_session(sender)
+                        return {"status": "ok"}
+
 
 
             if text == "status":
