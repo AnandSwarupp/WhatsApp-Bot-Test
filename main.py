@@ -9,6 +9,7 @@ from ocr import ocr_from_bytes
 from openai_utils import ask_openai
 from datetime import datetime
 import re
+import ast
 
 app = FastAPI()
 
@@ -249,13 +250,18 @@ async def webhook(request: Request):
                     print("OpenAI response:", sql_response)
             
                     # Parse returned tuples
+
                     rows = []
                     for line in sql_response.strip().splitlines():
                         line = line.strip().rstrip(',')
                         if line.startswith("(") and line.endswith(")"):
-                            parts = [v.strip().strip("'") for v in line[1:-1].split(",")]
-                            if len(parts) == 8:
-                                rows.append(parts)
+                            try:
+                                row = ast.literal_eval(line)
+                                if len(row) == 8:
+                                    rows.append(row)
+                            except Exception as e:
+                                print("⚠️ Failed to parse line:", line, "Error:", e)
+
             
                     # Store match results for all items
                     all_matches = []
