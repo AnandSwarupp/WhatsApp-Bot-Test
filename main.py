@@ -9,11 +9,10 @@ from ocr import ocr_from_bytes
 from openai_utils import ask_openai
 from datetime import datetime
 import re
-from missing_data import extract_missing_fields, generate_prompt_for_missing, validate_field_input, update_partial_data
-from data_collection_states import DataCollectionState
 
 app = FastAPI()
 
+# Supabase setup
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -58,133 +57,6 @@ async def webhook(request: Request):
                 set_user_state(sender, "awaiting_email")
                 return {"status": "ok"}
 
-            # Handle data collection states first
-            if state and state.startswith("awaiting_invoice_data:"):
-                response_data, new_state = DataCollectionState.handle_invoice_data(
-                    sender, text, state, get_user_intent(sender)
-                )
-                
-                if response_data.get("message"):
-                    send_message(sender, response_data["message"])
-                
-                if new_state != "authenticated":
-                    set_user_state(sender, new_state)
-                    set_user_intent(sender, response_data.get("partial_data"))
-                else:
-                    set_user_state(sender, new_state)
-                    # Process complete invoice data
-                    rows = []
-                    for line in response_data["complete_data"].strip().splitlines():
-                        line = line.strip().rstrip(',')
-                        if line.startswith("(") and line.endswith(")"):
-                            parts = [v.strip().strip("'") for v in line[1:-1].split(",")]
-                            if len(parts) == 8:
-                                rows.append(parts)
-                    
-                    all_matches = []
-                    invoice_details = None
-            
-                    for row in rows:
-                        email, invoice_number, sellers_name, buyers_name, date, item, quantity_str, amount_str = row
-                        quantity = int(quantity_str)
-                        amount = int(amount_str)
-
-                        if invoice_details is None:
-                            invoice_details = {
-                                "invoice_number": invoice_number,
-                                "sellers_name": sellers_name,
-                                "buyers_name": buyers_name,
-                                "date": date
-                            }
-            
-                        # Insert into upload_invoice
-                        insert_result = supabase.table("upload_invoice").insert({
-                            "email": email,
-                            "invoice_number": invoice_number,
-                            "sellers_name": sellers_name,
-                            "buyers_name": buyers_name,
-                            "date": date,
-                            "item": item,
-                            "quantity": quantity,
-                            "amount": amount
-                        }).execute()
-            
-                        # Match in tally_invoice
-                        match_result = supabase.table("tally_invoice").select("*").match({
-                            "invoice_number": invoice_number,
-                            "sellers_name": sellers_name,
-                            "buyers_name": buyers_name,
-                            "date": date,
-                            "item": item,
-                            "quantity": quantity,
-                            "amount": amount
-                        }).execute()
-            
-                        all_matches.append(bool(match_result.data))
-            
-                    # Send one comprehensive response
-                    if invoice_details:
-                        match_count = sum(all_matches)
-                        total_items = len(all_matches)
-                        
-                        response = f"""
-                    ✅ Invoice {invoice_details['invoice_number']} processed
-                     📅 Date: {invoice_details['date']}
-                     👤 Seller: {invoice_details['sellers_name']}
-                     👥 Buyer: {invoice_details['buyers_name']}
-                     📊 Items: {total_items} ({match_count} matched)
-                        """
-                        send_message(sender, response.strip())
-                return {"status": "ok"}
-
-            elif state and state.startswith("awaiting_cheque_data:"):
-                response_data, new_state = DataCollectionState.handle_cheque_data(
-                    sender, text, state, get_user_intent(sender)
-                )
-                
-                if response_data.get("message"):
-                    send_message(sender, response_data["message"])
-                
-                if new_state != "authenticated":
-                    set_user_state(sender, new_state)
-                    set_user_intent(sender, response_data.get("partial_sql"))
-                else:
-                    set_user_state(sender, new_state)
-                    try:
-                        run_sql_on_supabase(response_data["complete_sql"])
-
-                        # Extract values for matching
-                        values_match = re.search(
-                            r"VALUES\s*\(['\"](.*?)['\"],\s*['\"](.*?)['\"],\s*['\"](.*?)['\"],\s*(\d+),\s*['\"](.*?)['\"],\s*['\"](.*?)['\"],\s*['\"](.*?)['\"]\)",
-                            response_data["complete_sql"],
-                            re.IGNORECASE
-                        )
-                        
-                        is_match = False
-                        if values_match:
-                            payee_name = values_match.group(2)
-                            senders_name = values_match.group(3)
-                            amount = int(values_match.group(4))
-                            date = values_match.group(5)
-                            
-                            # Check for match in tally_cheque
-                            match_result = supabase.table("tally_cheque").select("*").match({
-                                "payee_name": payee_name,
-                                "senders_name": senders_name,
-                                "amount": amount,
-                                "date": date
-                            }).execute()
-                            
-                            is_match = bool(match_result.data)
-                
-                        send_message(sender, "✅ Cheque uploaded successfully.")
-                        send_message(sender, f"🧾 Match found : {'Yes' if is_match else 'No'}")
-                    except Exception as e:
-                        print("❌ Error executing cheque SQL:", e)
-                        send_message(sender, "⚠ Failed to process cheque. Please try again.")
-                return {"status": "ok"}
-
-            # Original state handling
             if state == "awaiting_email":
                 set_user_email(sender, text.lower())
                 email = text
@@ -206,7 +78,7 @@ async def webhook(request: Request):
             if state == "awaiting_name":
                 set_user_intent(sender, text)
                 set_user_state(sender, "awaiting_age")
-                send_message(sender, "Great. Please enter your age.")
+                send_message(sender, "🎂 Great. Please enter your age.")
                 return {"status": "ok"}
 
             if state == "awaiting_age":
@@ -233,7 +105,7 @@ async def webhook(request: Request):
                     "whatsapp": sender
                 }).execute()
 
-                # Send OTP
+                # Now send OTP after registration
                 generate_and_send_otp(sender, email)
                 set_user_state(sender, "awaiting_otp")
                 send_message(sender, f"✅ You're almost done! OTP sent to {email}. Please reply with the code.")
@@ -255,6 +127,7 @@ async def webhook(request: Request):
 
             send_message(sender, "👋 Please say 'hello' to get started.")
             return {"status": "ok"}
+
 
         if not is_authenticated(sender):
             send_message(sender, "🔒 Please verify by saying 'hello' first.")
@@ -320,25 +193,14 @@ async def webhook(request: Request):
                     Convert amounts to integers. Format date to YYYY-MM-DD.
                     Do NOT add INSERT INTO statement, comments, explanation, or code blocks — only the raw tuples separated by commas.
                     
-                    If any field cannot be determined, add a comment like:
-                    // Could not determine: sellers_name
-                    // Could not determine: date
-                    
                     OCR TEXT:
                     \"\"\"{ocr_text}\"\"\"
                     """
                 try:
                     sql_response = ask_openai(prompt)
                     print("OpenAI response:", sql_response)
-
-                    # Check for missing fields
-                    missing_fields = extract_missing_fields(sql_response)
-                    if missing_fields:
-                        set_user_state(sender, f"awaiting_invoice_data:{','.join(missing_fields)}")
-                        set_user_intent(sender, sql_response)
-                        send_message(sender, generate_prompt_for_missing(missing_fields[0]))
-                        return {"status": "ok"}
-
+            
+                    # Parse returned tuples
                     rows = []
                     for line in sql_response.strip().splitlines():
                         line = line.strip().rstrip(',')
@@ -346,7 +208,8 @@ async def webhook(request: Request):
                             parts = [v.strip().strip("'") for v in line[1:-1].split(",")]
                             if len(parts) == 8:
                                 rows.append(parts)
-
+            
+                    # Store match results for all items
                     all_matches = []
                     invoice_details = None
             
@@ -354,7 +217,8 @@ async def webhook(request: Request):
                         email, invoice_number, sellers_name, buyers_name, date, item, quantity_str, amount_str = row
                         quantity = int(quantity_str)
                         amount = int(amount_str)
-
+            
+                        # Store first invoice details for summary
                         if invoice_details is None:
                             invoice_details = {
                                 "invoice_number": invoice_number,
@@ -394,11 +258,11 @@ async def webhook(request: Request):
                         total_items = len(all_matches)
                         
                         response = f"""
-                    ✅ Invoice {invoice_details['invoice_number']} processed
-                     📅 Date: {invoice_details['date']}
-                     👤 Seller: {invoice_details['sellers_name']}
-                     👥 Buyer: {invoice_details['buyers_name']}
-                     📊 Items: {total_items} ({match_count} matched)
+            ✅ Invoice {invoice_details['invoice_number']} processed
+            📅 Date: {invoice_details['date']}
+            👤 Seller: {invoice_details['sellers_name']}
+            👥 Buyer: {invoice_details['buyers_name']}
+            📊 Items: {total_items} ({match_count} matched)
                         """
                         send_message(sender, response.strip())
                     else:
@@ -434,101 +298,49 @@ async def webhook(request: Request):
                     
                     Convert amount to integer, format date as YYYY-MM-DD.
                     
-                    If any field cannot be determined, add a comment like:
-                    // Could not determine: senders_name
-                    // Could not determine: account_number
-                    
                     OCR TEXT:
                     \"\"\"{ocr_text}\"\"\"
                 """
             
                 try:
                     sql_response = ask_openai(prompt)
-                    print("Raw SQL response:", sql_response)  # More descriptive logging
-                
-                    # Clean and normalize the SQL response
-                    sql_response = ' '.join(sql_response.split()).strip()
+                    print("SQL to execute:", sql_response)
                     
-                    # Debug: Print cleaned SQL for verification
-                    print("Cleaned SQL:", sql_response)
-                
-                    # Check for missing fields with improved extraction
-                    missing_fields = extract_missing_fields(sql_response)
-                    if missing_fields:
-                        print(f"Missing fields detected: {missing_fields}")  # Debug logging
-                        
-                        # Store the original SQL for reconstruction
-                        set_user_state(sender, f"awaiting_cheque_data:{','.join(missing_fields)}")
-                        set_user_intent(sender, sql_response)
-                        
-                        # Get user-friendly field name
-                        first_field = missing_fields[0].replace("_", " ")
-                        send_message(sender, f"Please enter the {first_field}:")
-                        return {"status": "ok"}
-                
-                    # Execute SQL if no missing fields
-                    try:
-                        run_sql_on_supabase(sql_response)
-                        
-                        # Improved regex pattern for value extraction
-                        values_pattern = (
-                            r"VALUES\s*\([\"']?(.*?)[\"']?\s*,\s*[\"']?(.*?)[\"']?\s*,\s*[\"']?(.*?)[\"']?\s*,"
-                            r"\s*(\d+)\s*,\s*[\"']?(.*?)[\"']?\s*,\s*[\"']?(.*?)[\"']?\s*,\s*[\"']?(.*?)[\"']?\s*\)"
-                        )
-                        values_match = re.search(values_pattern, sql_response, re.IGNORECASE)
-                        
-                        is_match = False
-                        match_details = ""
-                        
-                        if values_match:
-                            payee_name = values_match.group(2).strip("'\"")
-                            senders_name = values_match.group(3).strip("'\"")
-                            amount = int(values_match.group(4))
-                            date = values_match.group(5).strip("'\"")
-                            bank_name = values_match.group(6).strip("'\"")
-                            account_number = values_match.group(7).strip("'\"")
-                
-                            # Check for match in tally_cheque
-                            match_result = supabase.table("tally_cheque").select("*").match({
-                                "payee_name": payee_name,
-                                "senders_name": senders_name,
-                                "amount": amount,
-                                "date": date
-                            }).execute()
-                            
-                            is_match = bool(match_result.data)
-                            
-                            # Prepare detailed response
-                            match_details = (
-                                f"🔹 Payee: {payee_name}\n"
-                                f"🔹 Sender: {senders_name}\n"
-                                f"🔹 Amount: {amount}\n"
-                                f"🔹 Date: {date}\n"
-                                f"🔹 Bank: {bank_name}\n"
-                                f"🔹 Account: {account_number}\n\n"
-                                f"🧾 Match Found: {'✅ Yes' if is_match else '❌ No'}"
-                            )
-                
-                        send_message(sender, "✅ Cheque processed successfully!")
-                        if match_details:
-                            send_message(sender, match_details)
-                        else:
-                            send_message(sender, "⚠ Could not extract all cheque details for verification")
-                
-                    except Exception as e:
-                        print("❌ Database error:", str(e))
-                        send_message(sender, "⚠ Error saving cheque details. Please try again.")
-                        return {"status": "ok"}
-                
-                except Exception as e:
-                    print("❌ Cheque processing error:", str(e))
-                    error_msg = (
-                        "⚠ Failed to process cheque. Please ensure:\n"
-                        "1. The image is clear\n"
-                        "2. All cheque details are visible\n"
-                        "3. Try again with a better photo"
+                    # Execute the SQL first
+                    run_sql_on_supabase(sql_response)
+                    
+                    # Now parse values for matching (simplified approach)
+                    # Extract values from SQL string (this is a basic example - improve as needed)
+                    values_match = re.search(
+                        r"VALUES\s*\(['\"](.*?)['\"],\s*['\"](.*?)['\"],\s*['\"](.*?)['\"],\s*(\d+),\s*['\"](.*?)['\"],\s*['\"](.*?)['\"],\s*['\"](.*?)['\"]\)",
+                        sql_response,
+                        re.IGNORECASE
                     )
-                    send_message(sender, error_msg)
+                    
+                    is_match = False
+                    if values_match:
+                        payee_name = values_match.group(2)
+                        senders_name = values_match.group(3)
+                        amount = int(values_match.group(4))
+                        date = values_match.group(5)
+                        
+                        # Check for match in tally_cheque
+                        match_result = supabase.table("tally_cheque").select("*").match({
+                            "payee_name": payee_name,
+                            "senders_name": senders_name,
+                            "amount": amount,
+                            "date": date
+                        }).execute()
+                        
+                        is_match = bool(match_result.data)
+            
+                    send_message(sender, "✅ Cheque uploaded successfully.")
+                    send_message(sender, f"🧾 Match found : {'Yes' if is_match else 'No'}")
+            
+                except Exception as e:
+                    print("❌ Error during cheque processing:", e)
+                    send_message(sender, "⚠ Failed to process cheque. Please try again with a clearer image.")
+
     except Exception as e:
         print("❌ Unhandled error:", e)
         return JSONResponse(status_code=500, content={"error": str(e)})
