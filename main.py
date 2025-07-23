@@ -17,7 +17,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-ACCESS_TOKEN = "EAAR4EKodEE4BPGAnZBA60Gz4sEAPZBt0FatiyjxQ1YDDr22I1HwKGePaWQmLGE6kyl4tZAxd9rMfEn4hV9VSsZBZCDnmzRjTZC9hP0u5eeMNZCSgRi05pd0cll7ZCZBZBlBDtYE2Bw0ahwjqYF8zX64GIGJB829ZBmaIBNKSln7AZBEpH2cf9YEzGYKQdDS6ynzONSsezZCcgxqrG889vfGBrVJSa1xkOC1LmZA6VqNDlo4dqgDUZCwAAZDZD"
+ACCESS_TOKEN = "EAAR4EKodEE4BPILOK1gypv8kCNIsAqvHnENsM9K3S70cHyiPtSu8YCB1D0cVtX2BB3ZBC08lUyxaHbDo0abTWgdwZAlwZALtziNuNywE9yq7FjnpxR8J9AJIy8YPlL7i62YwS6DFaoZBxzPJASqJFG8MOIKZAiCmNh5eHXHKrm4nCVi6oIehvXmabJFviudmPHdhZCY24VrY5NE8CCMuVU8wtsMuSG83bnUIEo1kwqF60ctRoZD"
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 
 def format_date(raw_date: str) -> str | None:
@@ -56,6 +56,54 @@ async def webhook(request: Request):
                 send_message(sender, "📧 Please enter your email to begin.")
                 set_user_state(sender, "awaiting_email")
                 return {"status": "ok"}
+            
+            if state == "awaiting_invoice_details":
+                partial = get_user_partial_invoice(sender)
+                
+                # Ask in sequence: invoice_number → seller → buyer → date
+                if not partial.get("invoice_number"):
+                    partial["invoice_number"] = text
+                    set_user_partial_invoice(sender, partial)
+                    send_message(sender, "👤 Enter seller's name:")
+                    return {"status": "ok"}
+
+                if not partial.get("sellers_name"):
+                    partial["sellers_name"] = text
+                    set_user_partial_invoice(sender, partial)
+                    send_message(sender, "👥 Enter buyer's name:")
+                    return {"status": "ok"}
+
+                if not partial.get("buyers_name"):
+                    partial["buyers_name"] = text
+                    set_user_partial_invoice(sender, partial)
+                    send_message(sender, "📅 Enter date (DDMMYYYY or DD/MM/YYYY):")
+                    return {"status": "ok"}
+
+                if not partial.get("date"):
+                    date_str = format_date(text)
+                    if not date_str:
+                        send_message(sender, "❌ Invalid date format. Please try again (DDMMYYYY or DD/MM/YYYY).")
+                        return {"status": "ok"}
+                    partial["date"] = date_str
+                    set_user_partial_invoice(sender, partial)
+
+                    # Finalize invoice upload (save placeholder item)
+                    supabase.table("upload_invoice").insert({
+                        "email": partial["email"],
+                        "invoice_number": partial["invoice_number"],
+                        "sellers_name": partial["sellers_name"],
+                        "buyers_name": partial["buyers_name"],
+                        "date": partial["date"],
+                        "item": "MANUAL_ENTRY",
+                        "quantity": 1,
+                        "amount": 0
+                    }).execute()
+
+                    clear_user_partial_invoice(sender)
+                    set_user_state(sender, "authenticated")
+                    send_message(sender, "✅ Invoice data completed manually and uploaded.")
+                    return {"status": "ok"}
+
 
             if state == "awaiting_email":
                 set_user_email(sender, text.lower())
@@ -219,13 +267,24 @@ async def webhook(request: Request):
                         amount = int(amount_str)
             
                         # Store first invoice details for summary
+                        def any_missing_fields(invoice_number, sellers_name, buyers_name, date):
+                            return not all([invoice_number, sellers_name, buyers_name, date])
+
+                        # Store first invoice details for summary
                         if invoice_details is None:
-                            invoice_details = {
-                                "invoice_number": invoice_number,
-                                "sellers_name": sellers_name,
-                                "buyers_name": buyers_name,
-                                "date": date
-                            }
+                            if any_missing_fields(invoice_number, sellers_name, buyers_name, date):
+                                # Store partially parsed data in session
+                                set_user_partial_invoice(sender, {
+                                    "email": email,
+                                    "invoice_number": invoice_number or "",
+                                    "sellers_name": sellers_name or "",
+                                    "buyers_name": buyers_name or "",
+                                    "date": date or "",
+                                })
+                                set_user_state(sender, "awaiting_invoice_details")
+                                send_message(sender, "⚠️ Some details are missing. Let's complete them manually.\nPlease enter the invoice number:")
+                                return {"status": "ok"}
+
             
                         # Insert into upload_invoice
                         insert_result = supabase.table("upload_invoice").insert({
