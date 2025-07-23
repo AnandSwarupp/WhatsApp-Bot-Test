@@ -522,17 +522,18 @@ async def webhook(request: Request):
 
             elif intent == "upload_cheque":
                 prompt = f"""
-                    You are a cheque parser. From the OCR text below, extract only these 6 fields:
-                    - cheque_number
-                    - account_holder
+                    You are a cheque parser. From the OCR text below, extract only these 7 fields:
+                    - account_number
+                    - payee_name
+                    - senders_name
                     - bank_name
                     - amount
                     - date
                     - email (use this: {email})
-                    
+            
                     Return your answer as a single Python tuple in this exact format:
-                    ('{email}', 'cheque_number', 'account_holder', 'bank_name', amount, 'YYYY-MM-DD')
-                    
+                    ('{email}', 'payee_name', 'senders_name', amount, 'YYYY-MM-DD', 'bank_name', 'account_number')
+            
                     Only return the tuple. Do NOT return any SQL code or explanations.
             
                     OCR TEXT:
@@ -549,7 +550,7 @@ async def webhook(request: Request):
                         if line.startswith("(") and line.endswith(")"):
                             try:
                                 row = ast.literal_eval(line)
-                                if len(row) == 6:
+                                if len(row) == 7:
                                     cheque = row
                                     break
                             except Exception as e:
@@ -559,9 +560,8 @@ async def webhook(request: Request):
                         send_message(sender, "⚠️ Couldn't extract cheque details. Please try again or upload a clearer file.")
                         return {"status": "ok"}
             
-                    # Check for missing values
                     missing = {}
-                    fields = ["email", "cheque_number", "account_holder", "bank_name", "amount", "date"]
+                    fields = ["email", "payee_name", "senders_name", "amount", "date", "bank_name", "account_number"]
                     for i, field in enumerate(fields):
                         if cheque[i] in [None, "", 0]:
                             missing[field] = True
@@ -576,46 +576,50 @@ async def webhook(request: Request):
                         send_message(sender, f"⚠️ Some cheque fields are missing.\nPlease enter value for '{next_field}':")
                         return {"status": "ok"}
             
-                    # Upload complete data to Supabase
-                    email, cheque_number, account_holder, bank_name, amount, date = cheque
-                    response = supabase.table("upload_cheique").insert({
+                    # Unpack & insert
+                    email, payee_name, senders_name, amount, date, bank_name, account_number = cheque
+                    insert_result = supabase.table("upload_cheique").insert({
                         "email": email,
-                        "cheque_number": cheque_number,
-                        "account_holder": account_holder,
-                        "bank_name": bank_name,
+                        "payee_name": payee_name,
+                        "senders_name": senders_name,
                         "amount": int(amount),
-                        "date": date
+                        "date": date,
+                        "bank_name": bank_name,
+                        "account_number": account_number
                     }).execute()
             
-                    if response.error:
-                        print("❌ Supabase insert error:", response.error)
-                        send_message(sender, "❌ Error saving cheque. Please try again.")
+                    if insert_result.error:
+                        print("❌ Supabase insert error:", insert_result.error)
+                        send_message(sender, f"❌ Supabase insert failed: {insert_result.error['message']}")
                         return {"status": "ok"}
             
-                    # Check against tally_cheque
+                    # Match with tally_cheque
                     match_result = supabase.table("tally_cheque").select("*").match({
-                        "cheque_number": cheque_number,
-                        "account_holder": account_holder,
-                        "bank_name": bank_name,
+                        "payee_name": payee_name,
+                        "senders_name": senders_name,
                         "amount": int(amount),
-                        "date": date
+                        "date": date,
+                        "bank_name": bank_name,
+                        "account_number": account_number
                     }).execute()
             
                     matched = bool(match_result.data)
-            
-                    reply = f"""
-            ✅ Cheque `{cheque_number}` processed successfully.
+                    response = f"""
+            ✅ Cheque uploaded successfully
             🏦 Bank: {bank_name}
-            👤 Account Holder: {account_holder}
-            💰 Amount: ₹{amount}
+            👤 Payee: {payee_name}
+            🧾 Sender: {senders_name}
+            💳 A/C No: {account_number}
+            💰 Amount: {amount}
             📅 Date: {date}
-            📊 Tally Match: {"✅ Yes" if matched else "❌ No"}
+            📊 Match found: {"✅ Yes" if matched else "❌ No"}
                     """
-                    send_message(sender, reply.strip())
+                    send_message(sender, response.strip())
             
                 except Exception as e:
                     print("❌ Error processing cheque:", e)
                     send_message(sender, "⚠ Failed to process cheque. Try again.")
+
 
     except Exception as e:
         print("❌ Unhandled error:", e)
