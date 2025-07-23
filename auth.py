@@ -59,3 +59,14 @@ def generate_and_send_otp(sender, email):
     set_user_otp(sender, otp)
     set_user_state(sender, "awaiting_otp")
     send_otp_email(email, otp)
+
+user_partial_invoice_data = {}
+
+def set_user_partial_invoice(user_id, data):
+    user_partial_invoice_data[user_id] = data
+
+def get_user_partial_invoice(user_id):
+    return user_partial_invoice_data.get(user_id, {})
+
+def clear_user_partial_invoice(user_id):
+    user_partial_invoice_data.pop(user_id, None)
