@@ -169,6 +169,81 @@ async def webhook(request: Request):
                 else:
                     send_message(sender, "❌ Incorrect OTP. Try again.")
                 return {"status": "ok"}
+            
+            elif state == "awaiting_missing_invoice_fields":
+                session_data = get_user_session(sender)
+                pending_rows = session_data.get("pending_rows", [])
+                completed_rows = session_data.get("completed_rows", [])
+            
+                if not pending_rows:
+                    send_message(sender, "✅ All items uploaded.")
+                    set_user_state(sender, None)
+                    return {"status": "ok"}
+            
+                current = pending_rows[0]
+                row = list(current["row"])
+                missing_fields = current["missing_fields"]
+            
+                # Get current missing field to fill
+                field = list(missing_fields.keys())[0]
+                value = message_text.strip()
+            
+                # Cast type if needed
+                try:
+                    if field in ["quantity", "amount"]:
+                        value = int(value)
+                except:
+                    send_message(sender, f"❌ '{field}' must be a number. Please re-enter it:")
+                    return {"status": "ok"}
+            
+                # Update the row
+                field_index = ["email", "invoice_number", "sellers_name", "buyers_name", "date", "item", "quantity", "amount"].index(field)
+                row[field_index] = value
+                del missing_fields[field]
+            
+                if missing_fields:
+                    # Still more fields to fill for this row
+                    current["row"] = tuple(row)
+                    current["missing_fields"] = missing_fields
+                    pending_rows[0] = current
+                    set_user_session(sender, {
+                        "pending_rows": pending_rows,
+                        "completed_rows": completed_rows
+                    })
+                    next_field = list(missing_fields.keys())[0]
+                    send_message(sender, f"Please enter the value for '{next_field}':")
+                    return {"status": "ok"}
+                else:
+                    # All missing fields filled — insert into Supabase
+                    email, invoice_number, sellers_name, buyers_name, date, item, quantity, amount = row
+                    supabase.table("upload_invoice").insert({
+                        "email": email,
+                        "invoice_number": invoice_number,
+                        "sellers_name": sellers_name,
+                        "buyers_name": buyers_name,
+                        "date": date,
+                        "item": item,
+                        "quantity": quantity,
+                        "amount": amount
+                    }).execute()
+            
+                    completed_rows.append(tuple(row))
+                    pending_rows.pop(0)
+            
+                    set_user_session(sender, {
+                        "pending_rows": pending_rows,
+                        "completed_rows": completed_rows
+                    })
+            
+                    if pending_rows:
+                        next_field = list(pending_rows[0]["missing_fields"].keys())[0]
+                        send_message(sender, f"✅ Item saved. Now enter value for '{next_field}':")
+                    else:
+                        send_message(sender, f"✅ All invoice items uploaded successfully.")
+                        set_user_state(sender, None)
+            
+                    return {"status": "ok"}
+
 
             if text == "status":
                 send_message(sender, f"📌 State: {get_user_state(sender)} | Authenticated: {is_authenticated(sender)}")
