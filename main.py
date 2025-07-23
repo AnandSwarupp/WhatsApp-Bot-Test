@@ -578,20 +578,21 @@ async def webhook(request: Request):
             
                     # Unpack & insert
                     email, payee_name, senders_name, amount, date, bank_name, account_number = cheque
-                    insert_result = supabase.table("upload_cheique").insert({
-                        "email": email,
-                        "payee_name": payee_name,
-                        "senders_name": senders_name,
-                        "amount": int(amount),
-                        "date": date,
-                        "bank_name": bank_name,
-                        "account_number": account_number
-                    }).execute()
-            
-                    if insert_result.error:
-                        print("❌ Supabase insert error:", insert_result.error)
-                        send_message(sender, f"❌ Supabase insert failed: {insert_result.error['message']}")
+                    try:
+                        supabase.table("upload_cheique").insert({
+                            "email": email,
+                            "payee_name": payee_name,
+                            "senders_name": senders_name,
+                            "amount": int(amount),
+                            "date": date,
+                            "bank_name": bank_name,
+                            "account_number": account_number
+                        }).execute()
+                    except Exception as e:
+                        print("❌ Supabase insert error:", e)
+                        send_message(sender, f"❌ Supabase insert failed: {str(e)}")
                         return {"status": "ok"}
+
             
                     # Match with tally_cheque
                     match_result = supabase.table("tally_cheque").select("*").match({
