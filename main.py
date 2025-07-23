@@ -444,48 +444,91 @@ async def webhook(request: Request):
             
                 try:
                     sql_response = ask_openai(prompt)
-                    print("SQL to execute:", sql_response)
-
-                    # Check for missing fields
+                    print("Raw SQL response:", sql_response)  # More descriptive logging
+                
+                    # Clean and normalize the SQL response
+                    sql_response = ' '.join(sql_response.split()).strip()
+                    
+                    # Debug: Print cleaned SQL for verification
+                    print("Cleaned SQL:", sql_response)
+                
+                    # Check for missing fields with improved extraction
                     missing_fields = extract_missing_fields(sql_response)
                     if missing_fields:
+                        print(f"Missing fields detected: {missing_fields}")  # Debug logging
+                        
+                        # Store the original SQL for reconstruction
                         set_user_state(sender, f"awaiting_cheque_data:{','.join(missing_fields)}")
                         set_user_intent(sender, sql_response)
-                        send_message(sender, generate_prompt_for_missing(missing_fields[0]))
+                        
+                        # Get user-friendly field name
+                        first_field = missing_fields[0].replace("_", " ")
+                        send_message(sender, f"Please enter the {first_field}:")
                         return {"status": "ok"}
-
-                    run_sql_on_supabase(sql_response)
-
-                    values_match = re.search(
-                        r"VALUES\s*\(['\"](.*?)['\"],\s*['\"](.*?)['\"],\s*['\"](.*?)['\"],\s*(\d+),\s*['\"](.*?)['\"],\s*['\"](.*?)['\"],\s*['\"](.*?)['\"]\)",
-                        sql_response,
-                        re.IGNORECASE
-                    )
-                    
-                    is_match = False
-                    if values_match:
-                        payee_name = values_match.group(2)
-                        senders_name = values_match.group(3)
-                        amount = int(values_match.group(4))
-                        date = values_match.group(5)
+                
+                    # Execute SQL if no missing fields
+                    try:
+                        run_sql_on_supabase(sql_response)
                         
-                        # Check for match in tally_cheque
-                        match_result = supabase.table("tally_cheque").select("*").match({
-                            "payee_name": payee_name,
-                            "senders_name": senders_name,
-                            "amount": amount,
-                            "date": date
-                        }).execute()
+                        # Improved regex pattern for value extraction
+                        values_pattern = (
+                            r"VALUES\s*\([\"']?(.*?)[\"']?\s*,\s*[\"']?(.*?)[\"']?\s*,\s*[\"']?(.*?)[\"']?\s*,"
+                            r"\s*(\d+)\s*,\s*[\"']?(.*?)[\"']?\s*,\s*[\"']?(.*?)[\"']?\s*,\s*[\"']?(.*?)[\"']?\s*\)"
+                        )
+                        values_match = re.search(values_pattern, sql_response, re.IGNORECASE)
                         
-                        is_match = bool(match_result.data)
-            
-                    send_message(sender, "✅ Cheque uploaded successfully.")
-                    send_message(sender, f"🧾 Match found : {'Yes' if is_match else 'No'}")
-            
+                        is_match = False
+                        match_details = ""
+                        
+                        if values_match:
+                            payee_name = values_match.group(2).strip("'\"")
+                            senders_name = values_match.group(3).strip("'\"")
+                            amount = int(values_match.group(4))
+                            date = values_match.group(5).strip("'\"")
+                            bank_name = values_match.group(6).strip("'\"")
+                            account_number = values_match.group(7).strip("'\"")
+                
+                            # Check for match in tally_cheque
+                            match_result = supabase.table("tally_cheque").select("*").match({
+                                "payee_name": payee_name,
+                                "senders_name": senders_name,
+                                "amount": amount,
+                                "date": date
+                            }).execute()
+                            
+                            is_match = bool(match_result.data)
+                            
+                            # Prepare detailed response
+                            match_details = (
+                                f"🔹 Payee: {payee_name}\n"
+                                f"🔹 Sender: {senders_name}\n"
+                                f"🔹 Amount: {amount}\n"
+                                f"🔹 Date: {date}\n"
+                                f"🔹 Bank: {bank_name}\n"
+                                f"🔹 Account: {account_number}\n\n"
+                                f"🧾 Match Found: {'✅ Yes' if is_match else '❌ No'}"
+                            )
+                
+                        send_message(sender, "✅ Cheque processed successfully!")
+                        if match_details:
+                            send_message(sender, match_details)
+                        else:
+                            send_message(sender, "⚠ Could not extract all cheque details for verification")
+                
+                    except Exception as e:
+                        print("❌ Database error:", str(e))
+                        send_message(sender, "⚠ Error saving cheque details. Please try again.")
+                        return {"status": "ok"}
+                
                 except Exception as e:
-                    print("❌ Error during cheque processing:", e)
-                    send_message(sender, "⚠ Failed to process cheque. Please try again with a clearer image.")
-
+                    print("❌ Cheque processing error:", str(e))
+                    error_msg = (
+                        "⚠ Failed to process cheque. Please ensure:\n"
+                        "1. The image is clear\n"
+                        "2. All cheque details are visible\n"
+                        "3. Try again with a better photo"
+                    )
+                    send_message(sender, error_msg)
     except Exception as e:
         print("❌ Unhandled error:", e)
         return JSONResponse(status_code=500, content={"error": str(e)})
