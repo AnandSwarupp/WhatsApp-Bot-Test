@@ -77,7 +77,7 @@ async def webhook(request: Request):
             if state == "awaiting_name":
                 set_user_intent(sender, text)
                 set_user_state(sender, "awaiting_age")
-                send_message(sender, "🎂 Great. Please enter your age.")
+                send_message(sender, "Great. Please enter your age.")
                 return {"status": "ok"}
 
             if state == "awaiting_age":
@@ -255,10 +255,10 @@ async def webhook(request: Request):
                         
                         response = f"""
                     ✅ Invoice {invoice_details['invoice_number']} processed
-                     📅 Date: {invoice_details['date']}
-                     👤 Seller: {invoice_details['sellers_name']}
-                     👥 Buyer: {invoice_details['buyers_name']}
-                     📊 Items: {total_items} ({match_count} matched)
+                    📅 Date: {invoice_details['date']}
+                    👤 Seller: {invoice_details['sellers_name']}
+                    👥 Buyer: {invoice_details['buyers_name']}
+                    📊 Items: {total_items} ({match_count} matched)
                         """
                         send_message(sender, response.strip())
                     else:
