@@ -421,7 +421,41 @@ async def webhook(request: Request):
                         send_message(sender, f"⚠️ Some details are missing. Please enter the value for '{field}':")
                         return {"status": "ok"}
             
-                    send_message(sender, f"✅ Uploaded {len(complete_rows)} invoice items.")
+                    # ✅ Match tally for complete rows (if no incomplete rows exist)
+                    if complete_rows:
+                        all_matches = []
+                        for row in complete_rows:
+                            _, invoice_number, sellers_name, buyers_name, date, item, quantity, amount = row
+                            match_result = supabase.table("tally_invoice").select("*").match({
+                                "invoice_number": invoice_number,
+                                "sellers_name": sellers_name,
+                                "buyers_name": buyers_name,
+                                "date": date,
+                                "item": item,
+                                "quantity": quantity,
+                                "amount": amount
+                            }).execute()
+                            all_matches.append(bool(match_result.data))
+                    
+                        match_count = sum(all_matches)
+                        total_items = len(complete_rows)
+                    
+                        invoice_number = complete_rows[0][1]
+                        date = complete_rows[0][4]
+                        sellers_name = complete_rows[0][2]
+                        buyers_name = complete_rows[0][3]
+                    
+                        summary = f"""
+                    ✅ Invoice {invoice_number} processed
+                    📅 Date: {date}
+                    👤 Seller: {sellers_name}
+                    👥 Buyer: {buyers_name}
+                    📊 Items: {total_items} ({match_count} matched)
+                        """
+                        send_message(sender, summary.strip())
+                    else:
+                        send_message(sender, f"✅ Uploaded {len(complete_rows)} invoice items.")
+
                     return {"status": "ok"}
             
                 except Exception as e:
