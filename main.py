@@ -228,29 +228,28 @@ async def webhook(request: Request):
             if intent == "upload_invoice":
                 prompt = f"""
                     You are an intelligent invoice parser.
-                    
+            
                     From the OCR text below, extract invoice number, seller name, buyer name, date, and each item with quantity & amount.
-                    
+            
                     Return only multiple VALUES tuples in this format:
                     (email, invoice_number, sellers_name, buyers_name, date, item, quantity, amount)
-                    
+            
                     For example, output exactly like this:
                     ('{email}', 'INV001', 'SellerName', 'BuyerName', '2025-07-18', 'Desk', 10, 10000),
                     ('{email}', 'INV001', 'SellerName', 'BuyerName', '2025-07-18', 'Chair', 5, 5000)
-                    
+            
                     ⚠ Include the email as '{email}' in each tuple (taken from the user session).
                     Convert amounts to integers. Format date to YYYY-MM-DD.
                     Do NOT add INSERT INTO statement, comments, explanation, or code blocks — only the raw tuples separated by commas.
-                    
+            
                     OCR TEXT:
                     \"\"\"{ocr_text}\"\"\"
-                    """
+                """
+            
                 try:
                     sql_response = ask_openai(prompt)
                     print("OpenAI response:", sql_response)
             
-                    # Parse returned tuples
-
                     rows = []
                     for line in sql_response.strip().splitlines():
                         line = line.strip().rstrip(',')
@@ -261,9 +260,11 @@ async def webhook(request: Request):
                                     rows.append(row)
                             except Exception as e:
                                 print("⚠️ Failed to parse line:", line, "Error:", e)
-
             
-                    # Store match results for all items
+                    if not rows:
+                        send_message(sender, "⚠️ Couldn't extract any valid invoice items. Please try again or upload a clearer file.")
+                        return {"status": "ok"}
+            
                     all_matches = []
                     invoice_details = None
             
@@ -272,14 +273,15 @@ async def webhook(request: Request):
                         quantity = int(quantity_str)
                         amount = int(amount_str)
             
-                        # Store first invoice details for summary
-                        def any_missing_fields(invoice_number, sellers_name, buyers_name, date):
-                            return not all([invoice_number, sellers_name, buyers_name, date])
-
-                        # Store first invoice details for summary
                         if invoice_details is None:
-                            if any_missing_fields(invoice_number, sellers_name, buyers_name, date):
-                                # Store partially parsed data in session
+                            invoice_details = {
+                                "invoice_number": invoice_number,
+                                "sellers_name": sellers_name,
+                                "buyers_name": buyers_name,
+                                "date": date,
+                            }
+            
+                            if not all([invoice_number, sellers_name, buyers_name, date]):
                                 set_user_partial_invoice(sender, {
                                     "email": email,
                                     "invoice_number": invoice_number or "",
@@ -290,10 +292,9 @@ async def webhook(request: Request):
                                 set_user_state(sender, "awaiting_invoice_details")
                                 send_message(sender, "⚠️ Some details are missing. Let's complete them manually.\nPlease enter the invoice number:")
                                 return {"status": "ok"}
-
             
                         # Insert into upload_invoice
-                        insert_result = supabase.table("upload_invoice").insert({
+                        supabase.table("upload_invoice").insert({
                             "email": email,
                             "invoice_number": invoice_number,
                             "sellers_name": sellers_name,
@@ -304,7 +305,7 @@ async def webhook(request: Request):
                             "amount": amount
                         }).execute()
             
-                        # Match in tally_invoice
+                        # Check for match
                         match_result = supabase.table("tally_invoice").select("*").match({
                             "invoice_number": invoice_number,
                             "sellers_name": sellers_name,
@@ -317,21 +318,17 @@ async def webhook(request: Request):
             
                         all_matches.append(bool(match_result.data))
             
-                    # Send one comprehensive response
-                    if invoice_details:
-                        match_count = sum(all_matches)
-                        total_items = len(all_matches)
-                        
-                        response = f"""
+                    match_count = sum(all_matches)
+                    total_items = len(all_matches)
+            
+                    response = f"""
             ✅ Invoice {invoice_details['invoice_number']} processed
             📅 Date: {invoice_details['date']}
             👤 Seller: {invoice_details['sellers_name']}
             👥 Buyer: {invoice_details['buyers_name']}
             📊 Items: {total_items} ({match_count} matched)
-                        """
-                        send_message(sender, response.strip())
-                    else:
-                        send_message(sender, "✅ Invoice processed (no items found)")
+                    """
+                    send_message(sender, response.strip())
             
                 except Exception as e:
                     print("❌ Error processing invoice:", e)
