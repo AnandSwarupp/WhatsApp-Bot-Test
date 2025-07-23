@@ -169,6 +169,63 @@ async def webhook(request: Request):
                 else:
                     send_message(sender, "❌ Incorrect OTP. Try again.")
                 return {"status": "ok"}
+
+            elif state == "awaiting_missing_cheque_fields":
+                session_data = get_user_session(sender)
+                cheque = session_data.get("pending_cheque", [])
+                missing = session_data.get("missing_fields", {})
+            
+                field = list(missing.keys())[0]
+                value = message_text.strip()
+            
+                try:
+                    if field == "amount":
+                        value = int(value)
+                except:
+                    send_message(sender, f"❌ '{field}' must be a number. Please re-enter it:")
+                    return {"status": "ok"}
+            
+                field_index = ["email", "cheque_number", "account_holder", "bank_name", "amount", "date"].index(field)
+                cheque[field_index] = value
+                del missing[field]
+            
+                if missing:
+                    set_user_session(sender, {
+                        "pending_cheque": cheque,
+                        "missing_fields": missing
+                    })
+                    next_field = list(missing.keys())[0]
+                    send_message(sender, f"Please enter value for '{next_field}':")
+                    return {"status": "ok"}
+                else:
+                    email, cheque_number, account_holder, bank_name, amount, date = cheque
+                    supabase.table("upload_cheque").insert({
+                        "email": email,
+                        "cheque_number": cheque_number,
+                        "account_holder": account_holder,
+                        "bank_name": bank_name,
+                        "amount": int(amount),
+                        "date": date
+                    }).execute()
+            
+                    # Match in tally_cheque
+                    match_result = supabase.table("tally_cheque").select("*").match({
+                        "cheque_number": cheque_number,
+                        "account_holder": account_holder,
+                        "bank_name": bank_name,
+                        "amount": int(amount),
+                        "date": date
+                    }).execute()
+            
+                    matched = bool(match_result.data)
+                    send_message(sender, f"""
+            ✅ Cheque {cheque_number} uploaded
+            📊 Match found: {"✅ Yes" if matched else "❌ No"}
+                    """.strip())
+            
+                    set_user_state(sender, None)
+                    return {"status": "ok"}
+
             
             elif state == "awaiting_missing_invoice_fields":
                 session_data = get_user_session(sender)
@@ -494,42 +551,74 @@ async def webhook(request: Request):
             
                 try:
                     sql_response = ask_openai(prompt)
-                    print("SQL to execute:", sql_response)
-                    
-                    # Execute the SQL first
-                    run_sql_on_supabase(sql_response)
-                    
-                    # Now parse values for matching (simplified approach)
-                    # Extract values from SQL string (this is a basic example - improve as needed)
-                    values_match = re.search(
-                        r"VALUES\s*\(['\"](.*?)['\"],\s*['\"](.*?)['\"],\s*['\"](.*?)['\"],\s*(\d+),\s*['\"](.*?)['\"],\s*['\"](.*?)['\"],\s*['\"](.*?)['\"]\)",
-                        sql_response,
-                        re.IGNORECASE
-                    )
-                    
-                    is_match = False
-                    if values_match:
-                        payee_name = values_match.group(2)
-                        senders_name = values_match.group(3)
-                        amount = int(values_match.group(4))
-                        date = values_match.group(5)
-                        
-                        # Check for match in tally_cheque
-                        match_result = supabase.table("tally_cheque").select("*").match({
-                            "payee_name": payee_name,
-                            "senders_name": senders_name,
-                            "amount": amount,
-                            "date": date
-                        }).execute()
-                        
-                        is_match = bool(match_result.data)
+                    print("OpenAI response:", sql_response)
             
-                    send_message(sender, "✅ Cheque uploaded successfully.")
-                    send_message(sender, f"🧾 Match found : {'Yes' if is_match else 'No'}")
+                    cheque = None
+                    for line in sql_response.strip().splitlines():
+                        line = line.strip().rstrip(',')
+                        if line.startswith("(") and line.endswith(")"):
+                            try:
+                                row = ast.literal_eval(line)
+                                if len(row) == 6:
+                                    cheque = row
+                                    break
+                            except Exception as e:
+                                print("⚠️ Failed to parse:", line, "Error:", e)
+            
+                    if not cheque:
+                        send_message(sender, "⚠️ Couldn't extract cheque details. Please try again or upload a clearer file.")
+                        return {"status": "ok"}
+            
+                    missing = {}
+                    fields = ["email", "cheque_number", "account_holder", "bank_name", "amount", "date"]
+                    for i, field in enumerate(fields):
+                        if cheque[i] in [None, "", 0]:
+                            missing[field] = True
+            
+                    if missing:
+                        set_user_state(sender, "awaiting_missing_cheque_fields")
+                        set_user_session(sender, {
+                            "pending_cheque": list(cheque),
+                            "missing_fields": missing
+                        })
+                        next_field = list(missing.keys())[0]
+                        send_message(sender, f"⚠️ Some cheque fields are missing.\nPlease enter value for '{next_field}':")
+                        return {"status": "ok"}
+            
+                    # Upload if all fields are complete
+                    email, cheque_number, account_holder, bank_name, amount, date = cheque
+                    supabase.table("upload_cheque").insert({
+                        "email": email,
+                        "cheque_number": cheque_number,
+                        "account_holder": account_holder,
+                        "bank_name": bank_name,
+                        "amount": int(amount),
+                        "date": date
+                    }).execute()
+            
+                    # Match against tally_cheque
+                    match_result = supabase.table("tally_cheque").select("*").match({
+                        "cheque_number": cheque_number,
+                        "account_holder": account_holder,
+                        "bank_name": bank_name,
+                        "amount": int(amount),
+                        "date": date
+                    }).execute()
+            
+                    matched = bool(match_result.data)
+                    response = f"""
+            ✅ Cheque {cheque_number} processed
+            🏦 Bank: {bank_name}
+            👤 Account Holder: {account_holder}
+            💰 Amount: {amount}
+            📅 Date: {date}
+            📊 Match found: {"✅ Yes" if matched else "❌ No"}
+                    """
+                    send_message(sender, response.strip())
             
                 except Exception as e:
-                    print("❌ Error during cheque processing:", e)
-                    send_message(sender, "⚠ Failed to process cheque. Please try again with a clearer image.")
+                    print("❌ Error processing cheque:", e)
+                    send_message(sender, "⚠ Failed to process cheque. Try again.")
 
     except Exception as e:
         print("❌ Unhandled error:", e)
