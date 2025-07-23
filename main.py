@@ -227,23 +227,19 @@ async def webhook(request: Request):
 
             if intent == "upload_invoice":
                 prompt = f"""
-                    You are an intelligent invoice parser.
+                You are an intelligent invoice parser.
             
-                    From the OCR text below, extract invoice number, seller name, buyer name, date, and each item with quantity & amount.
+                From the OCR text below, extract invoice number, seller name, buyer name, date, and each item with quantity & amount.
             
-                    Return only multiple VALUES tuples in this format:
-                    (email, invoice_number, sellers_name, buyers_name, date, item, quantity, amount)
+                Return only multiple VALUES tuples in this format:
+                (email, invoice_number, sellers_name, buyers_name, date, item, quantity, amount)
             
-                    For example, output exactly like this:
-                    ('{email}', 'INV001', 'SellerName', 'BuyerName', '2025-07-18', 'Desk', 10, 10000),
-                    ('{email}', 'INV001', 'SellerName', 'BuyerName', '2025-07-18', 'Chair', 5, 5000)
+                ⚠ Include the email as '{email}' in each tuple.
+                Format the date as YYYY-MM-DD. Convert amounts to integers.
+                Do NOT add explanations — only raw Python tuples, comma-separated.
             
-                    ⚠ Include the email as '{email}' in each tuple (taken from the user session).
-                    Convert amounts to integers. Format date to YYYY-MM-DD.
-                    Do NOT add INSERT INTO statement, comments, explanation, or code blocks — only the raw tuples separated by commas.
-            
-                    OCR TEXT:
-                    \"\"\"{ocr_text}\"\"\"
+                OCR TEXT:
+                \"\"\"{ocr_text}\"\"\"
                 """
             
                 try:
@@ -259,41 +255,38 @@ async def webhook(request: Request):
                                 if len(row) == 8:
                                     rows.append(row)
                             except Exception as e:
-                                print("⚠️ Failed to parse line:", line, "Error:", e)
+                                print("⚠ Failed to parse line:", line, e)
             
                     if not rows:
-                        send_message(sender, "⚠️ Couldn't extract any valid invoice items. Please try again or upload a clearer file.")
+                        send_message(sender, "⚠️ Could not extract any valid invoice items. Please try again or upload a clearer image.")
                         return {"status": "ok"}
             
-                    all_matches = []
-                    invoice_details = None
+                    incomplete_rows = []
+                    complete_rows = []
             
                     for row in rows:
-                        email, invoice_number, sellers_name, buyers_name, date, item, quantity_str, amount_str = row
-                        quantity = int(quantity_str)
-                        amount = int(amount_str)
+                        email, invoice_number, sellers_name, buyers_name, date, item, quantity, amount = row
+                        missing = {}
             
-                        if invoice_details is None:
-                            invoice_details = {
-                                "invoice_number": invoice_number,
-                                "sellers_name": sellers_name,
-                                "buyers_name": buyers_name,
-                                "date": date,
-                            }
+                        if not invoice_number: missing["invoice_number"] = ""
+                        if not sellers_name: missing["sellers_name"] = ""
+                        if not buyers_name: missing["buyers_name"] = ""
+                        if not date: missing["date"] = ""
+                        if not item: missing["item"] = ""
+                        if not quantity: missing["quantity"] = ""
+                        if not amount: missing["amount"] = ""
             
-                            if not all([invoice_number, sellers_name, buyers_name, date]):
-                                set_user_partial_invoice(sender, {
-                                    "email": email,
-                                    "invoice_number": invoice_number or "",
-                                    "sellers_name": sellers_name or "",
-                                    "buyers_name": buyers_name or "",
-                                    "date": date or "",
-                                })
-                                set_user_state(sender, "awaiting_invoice_details")
-                                send_message(sender, "⚠️ Some details are missing. Let's complete them manually.\nPlease enter the invoice number:")
-                                return {"status": "ok"}
+                        if missing:
+                            incomplete_rows.append({
+                                "row": row,
+                                "missing_fields": missing
+                            })
+                        else:
+                            complete_rows.append(row)
             
-                        # Insert into upload_invoice
+                    # Upload complete rows
+                    for row in complete_rows:
+                        email, invoice_number, sellers_name, buyers_name, date, item, quantity, amount = row
                         supabase.table("upload_invoice").insert({
                             "email": email,
                             "invoice_number": invoice_number,
@@ -305,34 +298,24 @@ async def webhook(request: Request):
                             "amount": amount
                         }).execute()
             
-                        # Check for match
-                        match_result = supabase.table("tally_invoice").select("*").match({
-                            "invoice_number": invoice_number,
-                            "sellers_name": sellers_name,
-                            "buyers_name": buyers_name,
-                            "date": date,
-                            "item": item,
-                            "quantity": quantity,
-                            "amount": amount
-                        }).execute()
+                    # Handle incomplete rows
+                    if incomplete_rows:
+                        set_user_state(sender, "awaiting_missing_invoice_fields")
+                        set_user_session(sender, {
+                            "pending_rows": incomplete_rows,
+                            "completed_rows": complete_rows
+                        })
+                        first = incomplete_rows[0]
+                        field = list(first["missing_fields"].keys())[0]
+                        send_message(sender, f"⚠️ Some details are missing. Please enter the value for '{field}':")
+                        return {"status": "ok"}
             
-                        all_matches.append(bool(match_result.data))
-            
-                    match_count = sum(all_matches)
-                    total_items = len(all_matches)
-            
-                    response = f"""
-            ✅ Invoice {invoice_details['invoice_number']} processed
-            📅 Date: {invoice_details['date']}
-            👤 Seller: {invoice_details['sellers_name']}
-            👥 Buyer: {invoice_details['buyers_name']}
-            📊 Items: {total_items} ({match_count} matched)
-                    """
-                    send_message(sender, response.strip())
+                    send_message(sender, f"✅ Uploaded {len(complete_rows)} invoice items.")
+                    return {"status": "ok"}
             
                 except Exception as e:
-                    print("❌ Error processing invoice:", e)
-                    send_message(sender, "⚠ Failed to process invoice. Try again.")
+                    print("❌ Error:", e)
+                    send_message(sender, "⚠ Something went wrong while processing your invoice.")
 
 
             elif intent == "upload_cheque":
