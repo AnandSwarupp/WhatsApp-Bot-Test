@@ -522,32 +522,22 @@ async def webhook(request: Request):
 
             elif intent == "upload_cheque":
                 prompt = f"""
-                    You are an intelligent cheque parser.
-                    1. Only return the SQL query as plain text without any description, comments, code blocks, or extra characters.
-                    2. No use of Markdown or enclosing query in ```sql or ``` blocks.
-                    3. Generate the query in a single line or properly formatted with minimal whitespace.
-                    4. Ensure the query uses valid SQL syntax that can be executed directly in SQL Server.
-                    5.Dont use any /n in the code.
-                    6.The name of table is "upload_cheique".
+                    You are a cheque parser. From the OCR text below, extract only these 6 fields:
+                    - cheque_number
+                    - account_holder
+                    - bank_name
+                    - amount
+                    - date
+                    - email (use this: {email})
                     
-                    Extract the following:
-                    - Account Holder Name
-                    - Receiver Name
-                    - Cheque Date (DDMMYYYY)
-                    - Bank Name
-                    - Account Number
-                    - Amount
+                    Return your answer as a single Python tuple in this exact format:
+                    ('{email}', 'cheque_number', 'account_holder', 'bank_name', amount, 'YYYY-MM-DD')
                     
-                    Return one SQL query like:
-                    
-                    INSERT INTO upload_cheique (email, payee_name, senders_name, amount, date, bank_name, account_number)
-                    VALUES ('{email}', 'Receiver Name', 'Sender Name', 5000, '2025-07-01', 'Bank Name', '1234567890');
-                    
-                    Convert amount to integer, format date as YYYY-MM-DD.
+                    Only return the tuple. Do NOT return any SQL code or explanations.
                     
                     OCR TEXT:
                     \"\"\"{ocr_text}\"\"\"
-                """
+                    """
             
                 try:
                     sql_response = ask_openai(prompt)
